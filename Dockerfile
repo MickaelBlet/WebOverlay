@@ -2,7 +2,9 @@
 # Desktop builds, one stage per OS so BuildKit runs them in parallel:
 #   linux:   amd64 (deb, rpm, AppImage)
 #   windows: amd64 (NSIS installer + portable exe, cargo-xwin)
-# Usage: scripts/build.sh [--fast] [linux|windows]... (or `docker buildx bake [linux|windows]`).
+#   check:   fmt, clippy (Linux + Windows), tests; no output
+# Usage: scripts/build.sh [--fast] [linux|windows]... (or `docker buildx bake [linux|windows]`),
+#        scripts/check.sh (or `docker buildx bake check`).
 # Output: dist-tauri/{linux,windows}/
 # Base images and downloaded tools are pinned by digest or checksum: bump them on purpose.
 
@@ -13,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl file wget pkg-config xdg-utils \
       libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
       clang lld llvm nsis \
+      fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # Jammy ships NSIS 3.08, Tauri's installer script includes Win/RestartManager.nsh (NSIS >= 3.09).
@@ -37,6 +40,7 @@ RUN curl -fsSLo /tmp/rustup-init \
     && chmod +x /tmp/rustup-init \
     && /tmp/rustup-init -y --profile minimal --default-toolchain ${RUST_VERSION} \
       --target x86_64-unknown-linux-gnu --target x86_64-pc-windows-msvc \
+      --component clippy --component rustfmt \
     && rm /tmp/rustup-init
 
 # Prebuilt release binaries instead of `cargo install` (minutes of compilation each).
@@ -97,6 +101,16 @@ RUN --mount=type=cache,id=weboverlay-cache-windows,target=/root/.cache \
     mkdir -p /out; \
     cp $t/bundle/nsis/*.exe /out/; \
     cp $t/weboverlay.exe /out/WebOverlay-portable.exe
+
+# Pre-commit checks; own caches so it can run alongside the release builds.
+FROM src AS check
+RUN --mount=type=cache,id=weboverlay-cache-check,target=/root/.cache \
+    --mount=type=cache,id=weboverlay-target-check,target=/app/target \
+    set -eux; \
+    cargo fmt --check; \
+    cargo clippy --locked --all-targets -- -D warnings; \
+    cargo test --locked; \
+    cargo xwin clippy --locked --target x86_64-pc-windows-msvc -- -D warnings
 
 FROM scratch AS linux-out
 COPY --from=linux /out /

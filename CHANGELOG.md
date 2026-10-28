@@ -22,3 +22,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Launcher when started without app nor `--config`: recent apps and the apps of the user and portable configs, opened in one click.
 - Launcher `New config…` button: creates a config file anywhere with a native save dialog (pre-filled with a commented example of every key), lists it in the launcher and opens it in the editor.
 - Docker release builds (`scripts/build.sh [--fast] [linux|windows]...`): Linux `.deb`/`.rpm`/`.AppImage`, Windows NSIS setup and portable exe; one platform at a time, `--fast` for quicker thin-LTO rebuilds.
+- `scripts/check.sh`: `cargo fmt --check`, clippy (Linux and Windows) and tests in Docker; no host toolchain or WSL needed.

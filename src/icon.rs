@@ -171,7 +171,7 @@ fn set_taskbar_icon(window: &tauri::Window, icon: &Image<'_>) {
     };
     let (width, height) = rgba.dimensions();
     let mut bgra = rgba.into_raw();
-    for pixel in bgra.chunks_exact_mut(4) {
+    for pixel in bgra.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
     // 32 bpp with alpha: the AND mask is ignored but must be provided.

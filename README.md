@@ -13,7 +13,9 @@ Open any website as a standalone desktop webapp (Tauri 2) and inject your own Ja
 
 ## Prerequisites
 
-Linux (incl. WSL2 + WSLg):
+Release builds and checks: Docker with buildx only (any Linux).
+
+Dev run (`cargo run`) on Linux:
 
 ```sh
 sudo apt install pkg-config build-essential libssl-dev libwebkit2gtk-4.1-dev \
@@ -27,6 +29,7 @@ Windows: Rust (MSVC toolchain) and WebView2 (preinstalled on Windows 10/11).
 
 ```sh
 cargo run -- --config examples/config.toml demo   # dev
+scripts/check.sh                                  # fmt, clippy (Linux + Windows), tests in Docker
 scripts/build.sh                                  # release builds in Docker (see below)
 weboverlay [--config <path>] [--list] [--edit] [--maximized] [<app>...]  # no app = open all
 weboverlay                                        # launcher
@@ -34,7 +37,7 @@ weboverlay                                        # launcher
 
 ## Release builds
 
-`scripts/build.sh` (`docker buildx bake`) builds both platforms in parallel from Linux/WSL, only Docker required. `scripts/build.sh [--fast] [linux|windows]...` builds only the given platforms; `--fast` trades a slightly bigger binary for a much quicker rebuild (thin LTO):
+`scripts/build.sh` (`docker buildx bake`) builds both platforms in parallel from any Linux, only Docker (with buildx) required. `scripts/build.sh [--fast] [linux|windows]...` builds only the given platforms; `--fast` trades a slightly bigger binary for a much quicker rebuild (thin LTO):
 
 - `dist-tauri/linux/`: `.deb`, `.rpm`, `.AppImage`
 - `dist-tauri/windows/`: NSIS `*-setup.exe` and `WebOverlay-portable.exe` (cargo-xwin, MSVC target)
