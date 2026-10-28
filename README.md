@@ -5,7 +5,7 @@ Open any website as a standalone desktop webapp (Tauri 2) and inject your own Ja
 - One window per app, isolated profile (cookies, storage) per app.
 - Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, edit config, open in browser, window controls.
   Shortcuts: Alt+←/→, F5 / Ctrl+R.
-- Site favicon as window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows.
+- Site favicon as window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon (icon taken when pinned).
 - Scripts and styles injected on every page load, filtered by URL wildcards.
 - Built-in editor for the config and its script/style files (TOML/JS/CSS highlighting).
 - Off-host links and popups open in the system browser.

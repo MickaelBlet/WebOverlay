@@ -122,6 +122,12 @@ pub fn favicon(handle: &AppHandle, label: &str) -> Option<String> {
     lock(handle).get(label).map(|state| state.favicon.clone())
 }
 
+/// App shown in window `label`.
+#[cfg(windows)]
+pub fn app(handle: &AppHandle, label: &str) -> Option<Arc<AppWindow>> {
+    lock(handle).get(label).map(|state| state.app.clone())
+}
+
 fn sanitize_favicon(url: &str) -> Option<String> {
     let parsed = Url::parse(url).ok()?;
     let ok = match parsed.scheme() {

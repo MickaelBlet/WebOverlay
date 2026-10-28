@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated profile (cookies, storage) per app.
 - Custom header replacing the OS title bar: back, forward, reload, home, favicon, page title, URL, zoom, open in browser, window controls.
 - Navigation shortcuts: Alt+←/→, F5 / Ctrl+R.
-- Site favicon as window/taskbar icon (Windows, Linux X11), SVG favicons rasterized; one taskbar button per app on Windows.
+- Site favicon as window/taskbar icon (Windows, Linux X11), SVG favicons rasterized; one taskbar button per app (and config) on Windows.
+- Windows: a pinned app relaunches with its config (`--config <path> <app>`) and keeps its favicon.
 - User JavaScript and CSS injected on every page load, filtered by URL wildcards, with `run_at` timing.
 - Off-host links and popups open in the system browser; allowed-host popups keep `window.opener` (OAuth).
 - Remote pages get no Tauri IPC access.

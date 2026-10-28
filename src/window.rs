@@ -25,6 +25,8 @@ pub struct AppWindow {
     pub config: AppConfig,
     pub scripts: Vec<String>,
     pub profile_dir: PathBuf,
+    /// Absolute path of the config file the app comes from.
+    pub config_path: PathBuf,
 }
 
 pub fn header_label(window: &str) -> String {
@@ -68,7 +70,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
         .decorations(false)
         .maximized(app.config.maximized)
         .build()?;
-    icon::set_app_id(&window, &app.config.name);
+    icon::set_app_id(&window, &app);
     header::register(handle, &label, app.clone());
 
     // Same data directory as the content: one browser environment per app.
@@ -242,7 +244,7 @@ fn new_window(
     .build();
     match result {
         Ok(window) => {
-            icon::set_app_id(&window.as_ref().window(), &app.config.name);
+            icon::set_app_id(&window.as_ref().window(), app);
             NewWindowResponse::Create { window }
         }
         Err(e) => {

@@ -125,6 +125,8 @@ fn prepare() -> Result<Option<Launch>> {
         bail!("no app defined in {}", config_path.display());
     }
 
+    // Not `canonicalize`: it yields `\\?\` paths on Windows.
+    let absolute_config = std::path::absolute(&config_path).unwrap_or_else(|_| config_path.clone());
     let profiles = dirs::data_local_dir()
         .context("cannot determine the user data directory")?
         .join("weboverlay")
@@ -140,6 +142,7 @@ fn prepare() -> Result<Option<Launch>> {
                 config: app,
                 scripts,
                 profile_dir,
+                config_path: absolute_config.clone(),
             }))
         })
         .collect::<Result<Vec<_>>>()?;

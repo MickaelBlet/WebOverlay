@@ -1,9 +1,11 @@
-//! Window icon (taskbar / Alt+Tab) from the site favicon, plus a per-app taskbar identity on Windows.
+//! Window icon (taskbar / Alt+Tab) from the site favicon, plus a per-app taskbar identity on Windows
+//! (own button, and a pin that relaunches the app with its config and favicon).
 //!
 //! The favicon is downloaded from Rust: the page and the header cannot read cross-origin image bytes.
 //! Linux: only X11 window managers use the window icon; Wayland compositors use the `.desktop` file.
 
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -13,6 +15,7 @@ use tauri::image::Image;
 use tauri::{AppHandle, Manager, Url};
 
 use crate::header;
+use crate::window::AppWindow;
 
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// Raster size for SVG favicons (downscaled per platform when applied).
@@ -39,7 +42,12 @@ pub fn update(handle: &AppHandle, label: &str, favicon: String, user_agent: Opti
         let icon = image.or_else(|| handle.default_window_icon().cloned());
         if let Some(icon) = icon {
             #[cfg(windows)]
-            set_taskbar_icon(&window, &icon);
+            {
+                set_taskbar_icon(&window, &icon);
+                if let Some(app) = header::app(&handle, &label) {
+                    save_pin_icon(&window, &app, &icon);
+                }
+            }
             let _ = window.set_icon(icon);
         }
     });
@@ -206,33 +214,153 @@ fn set_taskbar_icon(window: &tauri::Window, icon: &Image<'_>) {
     }
 }
 
-/// Gives each app its own taskbar button/group (and pin) instead of grouping all under the exe.
+/// Taskbar identity of an app: `dev.blet.weboverlay.<config path hash>.<name>`, so apps with the
+/// same name in different configs get their own button and pin.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn app_id(app: &AppWindow) -> String {
+    // Windows paths are case-insensitive. FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
+    let path = app.config_path.to_string_lossy().to_lowercase();
+    let hash = path.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let mut id = format!("dev.blet.weboverlay.{hash:016x}.{}", app.config.name);
+    id.truncate(128); // AppUserModelID limit (the name is ASCII).
+    id
+}
+
+/// Command run by a pinned taskbar button.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn relaunch_command(exe: &Path, app: &AppWindow) -> String {
+    // Windows paths cannot contain `"`, app names are `[A-Za-z0-9_-]+`.
+    format!(
+        "\"{}\" --config \"{}\" {}",
+        exe.display(),
+        app.config_path.display(),
+        app.config.name
+    )
+}
+
+/// Last favicon of an app as `.ico`: pinned buttons need an icon file.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn pin_icon_path(app: &AppWindow) -> Option<PathBuf> {
+    Some(
+        dirs::data_local_dir()?
+            .join("weboverlay")
+            .join("icons")
+            .join(format!("{}.ico", app_id(app))),
+    )
+}
+
+/// Sets string properties of the window property store (read by the taskbar).
 #[cfg(windows)]
-pub fn set_app_id(window: &tauri::Window, app_name: &str) {
+fn set_window_props(
+    window: &tauri::Window,
+    props: &[(&windows::Win32::Foundation::PROPERTYKEY, &str)],
+) -> windows::core::Result<()> {
     use windows::Win32::Foundation::HWND;
-    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
     use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
     use windows::Win32::UI::Shell::PropertiesSystem::{
         IPropertyStore, SHGetPropertyStoreForWindow,
     };
 
-    let Ok(hwnd) = window.hwnd() else {
-        return;
+    let hwnd = window
+        .hwnd()
+        .map_err(|e| windows::core::Error::new(windows::core::HRESULT(-1), e.to_string()))?;
+    unsafe {
+        let store = SHGetPropertyStoreForWindow::<IPropertyStore>(HWND(hwnd.0))?;
+        for (key, value) in props {
+            store.SetValue(*key, &PROPVARIANT::from(*value))?;
+        }
+        store.Commit()
+    }
+}
+
+/// Gives each app its own taskbar button/group instead of grouping all under the exe, and makes
+/// a pinned button relaunch the app (same config) with its favicon instead of the bare exe.
+#[cfg(windows)]
+pub fn set_app_id(window: &tauri::Window, app: &AppWindow) {
+    use windows::Win32::Storage::EnhancedStorage::{
+        PKEY_AppUserModel_ID, PKEY_AppUserModel_RelaunchCommand,
+        PKEY_AppUserModel_RelaunchDisplayNameResource, PKEY_AppUserModel_RelaunchIconResource,
     };
-    let id = format!("dev.blet.weboverlay.{app_name}");
-    let result = unsafe {
-        SHGetPropertyStoreForWindow::<IPropertyStore>(HWND(hwnd.0)).and_then(|store| {
-            store.SetValue(&PKEY_AppUserModel_ID, &PROPVARIANT::from(id.as_str()))?;
-            store.Commit()
-        })
-    };
-    if let Err(e) = result {
-        eprintln!("weboverlay: cannot set taskbar id: {e}");
+
+    let id = app_id(app);
+    let mut props = vec![(&PKEY_AppUserModel_ID, id.clone())];
+    // The relaunch properties are only used together (display name required with the command).
+    if let Some(exe) = crate::config::exe_path() {
+        let icon = pin_icon_path(app)
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| exe.clone());
+        props.push((
+            &PKEY_AppUserModel_RelaunchCommand,
+            relaunch_command(&exe, app),
+        ));
+        props.push((
+            &PKEY_AppUserModel_RelaunchDisplayNameResource,
+            app.config
+                .title
+                .clone()
+                .unwrap_or_else(|| app.config.name.clone()),
+        ));
+        props.push((
+            &PKEY_AppUserModel_RelaunchIconResource,
+            format!("{},0", icon.display()),
+        ));
+    }
+    let props: Vec<_> = props.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    if let Err(e) = set_window_props(window, &props) {
+        eprintln!("weboverlay: cannot set taskbar id {id}: {e}");
     }
 }
 
 #[cfg(not(windows))]
-pub fn set_app_id(_window: &tauri::Window, _app_name: &str) {}
+pub fn set_app_id(_window: &tauri::Window, _app: &AppWindow) {}
+
+/// Writes `icon` as the app pin icon and points the window relaunch icon at it.
+#[cfg(windows)]
+fn save_pin_icon(window: &tauri::Window, app: &AppWindow, icon: &Image<'_>) {
+    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_RelaunchIconResource;
+
+    let Some(path) = pin_icon_path(app) else {
+        return;
+    };
+    if let Err(e) = write_ico(&path, icon) {
+        eprintln!("weboverlay: cannot write {}: {e}", path.display());
+        return;
+    }
+    // The property store is COM: use it from the main thread, like `set_app_id`.
+    let window = window.clone();
+    let _ = window.clone().run_on_main_thread(move || {
+        let value = format!("{},0", path.display());
+        if let Err(e) = set_window_props(
+            &window,
+            &[(&PKEY_AppUserModel_RelaunchIconResource, &value)],
+        ) {
+            eprintln!("weboverlay: cannot set pin icon: {e}");
+        }
+    });
+}
+
+/// `.ico` holding `icon`, downscaled to the 256 px ICO limit; written atomically (the shell may
+/// be reading the previous one).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn write_ico(path: &Path, icon: &Image<'_>) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let rgba = image::RgbaImage::from_raw(icon.width(), icon.height(), icon.rgba().to_vec())
+        .context("invalid icon")?;
+    let mut image = image::DynamicImage::ImageRgba8(rgba);
+    if image.width() > 256 || image.height() > 256 {
+        image = image.resize(256, 256, image::imageops::FilterType::Lanczos3);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("ico.tmp");
+    image.save_with_format(&tmp, image::ImageFormat::Ico)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -284,6 +412,49 @@ mod tests {
             ["data:image/png;base64,AA=="]
         );
         assert!(candidates("").is_empty());
+    }
+
+    fn app_window(config: &str, name: &str) -> AppWindow {
+        let toml = format!("[[app]]\nname = \"{name}\"\nurl = \"https://a.com\"");
+        AppWindow {
+            config: crate::config::Config::parse(&toml).unwrap().apps.remove(0),
+            scripts: Vec::new(),
+            profile_dir: PathBuf::new(),
+            config_path: PathBuf::from(config),
+        }
+    }
+
+    #[test]
+    fn app_id_depends_on_config_path() {
+        let a = app_id(&app_window("C:\\Users\\me\\config.toml", "mail"));
+        assert_eq!(a, app_id(&app_window("c:\\users\\ME\\Config.toml", "mail")));
+        assert_ne!(a, app_id(&app_window("D:\\config.toml", "mail")));
+        assert!(a.starts_with("dev.blet.weboverlay.") && a.ends_with(".mail"));
+        assert!(!a.contains(' '));
+        assert!(app_id(&app_window("/c.toml", &"x".repeat(200))).len() <= 128);
+    }
+
+    #[test]
+    fn relaunch_command_quotes_paths() {
+        let app = app_window("C:\\My Configs\\config.toml", "mail");
+        assert_eq!(
+            relaunch_command(
+                Path::new("C:\\Program Files\\WebOverlay\\weboverlay.exe"),
+                &app
+            ),
+            r#""C:\Program Files\WebOverlay\weboverlay.exe" --config "C:\My Configs\config.toml" mail"#
+        );
+    }
+
+    #[test]
+    fn writes_ico() {
+        let dir = std::env::temp_dir().join(format!("weboverlay-ico-{}", std::process::id()));
+        let path = dir.join("a.ico");
+        let icon = Image::new_owned(vec![255; 300 * 300 * 4], 300, 300);
+        write_ico(&path, &icon).unwrap();
+        let ico = image::open(&path).unwrap();
+        assert_eq!((ico.width(), ico.height()), (256, 256));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
