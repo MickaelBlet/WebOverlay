@@ -82,6 +82,9 @@ Paths are relative to the config file. Files are read at startup: restart the ap
   `<local data dir>/weboverlay/recent.json`; apps no longer in their config are greyed out.
 - **Folder config** (`config.toml` next to the executable, when present) and **User config**
   (`<config dir>/weboverlay/config.toml`): their apps, `Open all`, and `Edit` (`Create` when missing).
+- **Config**: configs created with `New config…` (native "save as" dialog; the file is created from a
+  commented template unless it exists, then opened in the editor), stored in
+  `<local data dir>/weboverlay/configs.json`; `Forget` removes one from the list (the file is kept).
 
 One click starts the app in a new WebOverlay process (`--config <path> <app>`); the launcher stays open.
 

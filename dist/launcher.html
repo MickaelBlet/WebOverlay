@@ -125,6 +125,7 @@
     background: var(--panel);
     font-size: 12px;
   }
+  #status button { height: 20px; padding: 0 8px; font-size: 12px; }
   #message { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #message.error { color: var(--error); }
   #message.ok { color: var(--ok); }
@@ -132,7 +133,7 @@
 </head>
 <body>
   <main id="list"></main>
-  <div id="status"><span id="message"></span></div>
+  <div id="status"><span id="message"></span><button id="new" title="Create a config file and open it in the editor">New config…</button></div>
 
 <script>
   const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
@@ -208,7 +209,7 @@
     const head = el(
       "div",
       { className: "head" },
-      el("span", { className: "title", textContent: c.kind === "user" ? "User config" : "Folder config" }),
+      el("span", { className: "title", textContent: { user: "User config", folder: "Folder config" }[c.kind] || "Config" }),
       // rtl keeps the end of long paths visible; the bdi keeps the path itself ltr.
       el("span", { className: "path", title: c.path }, el("bdi", { dir: "ltr", textContent: c.path })),
     );
@@ -220,6 +221,19 @@
     const edit = el("button", { textContent: c.exists ? "Edit" : "Create" });
     edit.addEventListener("click", () => run("launcher_edit", { config: c.path }, "the editor"));
     head.append(edit);
+    if (c.kind === "added") {
+      const forget = el("button", { textContent: "Forget", title: "Remove from this list (the file is kept)" });
+      forget.addEventListener("click", async () => {
+        try {
+          await invoke("launcher_forget", { config: c.path });
+          setMessage("");
+          refresh();
+        } catch (e) {
+          setMessage(String(e), "error");
+        }
+      });
+      head.append(forget);
+    }
 
     const section = el("section", {}, head);
     if (!c.exists) {
@@ -247,6 +261,16 @@
       setMessage(String(e), "error");
     }
   }
+
+  $("new").addEventListener("click", async () => {
+    try {
+      const path = await invoke("launcher_create");
+      if (path) setMessage(`Created ${path}`, "ok");
+      refresh();
+    } catch (e) {
+      setMessage(String(e), "error");
+    }
+  });
 
   // Pick up config edits and new recent entries made by other instances.
   window.addEventListener("focus", refresh);

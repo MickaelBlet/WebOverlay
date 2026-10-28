@@ -176,6 +176,8 @@ fn main() -> ExitCode {
             launcher::launcher_list,
             launcher::launcher_open,
             launcher::launcher_edit,
+            launcher::launcher_create,
+            launcher::launcher_forget,
         ])
         .setup(move |app| {
             match launch.mode {

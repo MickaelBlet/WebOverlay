@@ -24,6 +24,9 @@ base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "gif", "webp", "bmp"] }
 resvg = "0.49"
 percent-encoding = "2"
+# Native "save as" dialog of the launcher (not tauri-plugin-dialog: its init script overrides
+# `alert`/`confirm` in every page, remote content included).
+rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

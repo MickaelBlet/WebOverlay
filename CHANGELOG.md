@@ -20,4 +20,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Start maximized: `maximized = true` per app or `--maximized` on the command line.
 - Built-in config editor (header pencil button or `--edit`): `config.toml` and its script/style files, TOML/JS/CSS highlighting, config validated on save, Restart button.
 - Launcher when started without app nor `--config`: recent apps and the apps of the user and portable configs, opened in one click.
+- Launcher `New config…` button: creates a config file anywhere with a native save dialog, lists it in the launcher and opens it in the editor.
 - Docker release builds (`scripts/build.sh [--fast] [linux|windows]...`): Linux `.deb`/`.rpm`/`.AppImage`, Windows NSIS setup and portable exe; one platform at a time, `--fast` for quicker thin-LTO rebuilds.

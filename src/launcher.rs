@@ -1,6 +1,6 @@
 //! Launcher window (`dist/launcher.html`), shown when started without app nor `--config`:
-//! recent apps plus the apps of the user and portable configs, each started in a new process.
-//! Only the launcher webview may call its commands, and only on the listed configs/apps.
+//! recent apps plus the apps of the user, portable and added configs, each started in a new
+//! process. Only the launcher webview may call its commands, and only on the listed configs/apps.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -21,6 +21,16 @@ use crate::window::AppWindow;
 pub const LAUNCHER_LABEL: &str = "weboverlay:launcher";
 
 const RECENT_MAX: usize = 10;
+
+/// Content of a config created from the launcher.
+const NEW_CONFIG: &str = "\
+# WebOverlay config: one [[app]] table per window. Script/style paths are relative to this file.
+
+# [[app]]
+# name = \"example\"
+# url = \"https://example.com/\"
+# title = \"Example\"
+";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecentEntry {
@@ -49,7 +59,7 @@ struct AppEntry {
 
 #[derive(Serialize)]
 struct ConfigEntry {
-    /// `user` or `folder`.
+    /// `user`, `folder` or `added` (created from the launcher).
     kind: &'static str,
     path: PathBuf,
     exists: bool,
@@ -83,11 +93,28 @@ fn recent_path() -> Option<PathBuf> {
     )
 }
 
-fn load_recent(path: &Path) -> Vec<RecentEntry> {
+/// Configs created from the launcher.
+fn added_path() -> Option<PathBuf> {
+    Some(
+        dirs::data_local_dir()?
+            .join("weboverlay")
+            .join("configs.json"),
+    )
+}
+
+/// The JSON list at `path` (empty when missing or invalid).
+fn load_list<T: serde::de::DeserializeOwned>(path: &Path) -> Vec<T> {
     fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default()
+}
+
+fn save_list<T: Serialize>(path: &Path, list: &[T]) -> Result<(), String> {
+    path.parent()
+        .map_or(Ok(()), fs::create_dir_all)
+        .and_then(|()| fs::write(path, serde_json::to_string_pretty(list).unwrap_or_default()))
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 /// `new` first, then the `old` entries not replaced by one of them, at most `RECENT_MAX`.
@@ -125,18 +152,9 @@ pub fn record(config_path: &Path, apps: &[Arc<AppWindow>]) {
             opened,
         })
         .collect();
-    let list = merge_recent(load_recent(&path), new);
-    let result = path
-        .parent()
-        .map_or(Ok(()), fs::create_dir_all)
-        .and_then(|()| {
-            fs::write(
-                &path,
-                serde_json::to_string_pretty(&list).unwrap_or_default(),
-            )
-        });
-    if let Err(e) = result {
-        eprintln!("weboverlay: cannot write {}: {e}", path.display());
+    let list = merge_recent(load_list(&path), new);
+    if let Err(e) = save_list(&path, &list) {
+        eprintln!("weboverlay: {e}");
     }
 }
 
@@ -194,7 +212,7 @@ fn sources_from(recent: Vec<RecentEntry>, locals: Vec<(&'static str, PathBuf)>) 
 }
 
 fn sources() -> Sources {
-    let recent = recent_path().map(|p| load_recent(&p)).unwrap_or_default();
+    let recent = recent_path().map(|p| load_list(&p)).unwrap_or_default();
     let mut locals = Vec::new();
     if let Some(path) = config::portable_path() {
         locals.push(("folder", path));
@@ -202,6 +220,8 @@ fn sources() -> Sources {
     if let Ok(path) = config::user_path() {
         locals.push(("user", path));
     }
+    let added: Vec<PathBuf> = added_path().map(|p| load_list(&p)).unwrap_or_default();
+    locals.extend(added.into_iter().map(|path| ("added", path)));
     sources_from(recent, locals)
 }
 
@@ -234,6 +254,13 @@ fn check_caller(webview: &Webview) -> Result<(), String> {
     } else {
         Err("not allowed".into())
     }
+}
+
+/// `path` first, then the other `list` entries.
+fn add_config(list: Vec<PathBuf>, path: PathBuf) -> Vec<PathBuf> {
+    let mut list: Vec<PathBuf> = list.into_iter().filter(|p| *p != path).collect();
+    list.insert(0, path);
+    list
 }
 
 /// Starts this executable with `args`; the child is reaped from a thread.
@@ -275,6 +302,14 @@ pub fn launcher_open(webview: Webview, config: PathBuf, app: Option<String>) -> 
     spawn(args)
 }
 
+fn spawn_editor(config: PathBuf) -> Result<(), String> {
+    spawn(vec![
+        "--edit".into(),
+        "--config".into(),
+        config.into_os_string(),
+    ])
+}
+
 /// Opens the editor on a listed local config (which may not exist yet) in a new process.
 #[tauri::command]
 pub fn launcher_edit(webview: Webview, config: PathBuf) -> Result<(), String> {
@@ -282,11 +317,70 @@ pub fn launcher_edit(webview: Webview, config: PathBuf) -> Result<(), String> {
     if !sources().has_config(&config) {
         return Err(format!("{} is not a listed config", config.display()));
     }
-    spawn(vec![
-        "--edit".into(),
-        "--config".into(),
-        config.into_os_string(),
-    ])
+    spawn_editor(config)
+}
+
+/// Asks for a config path with a native "save as" dialog, creates the file from `NEW_CONFIG`
+/// (an existing file is kept as is), adds it to the launcher and opens it in the editor.
+/// Returns `None` when the dialog is cancelled.
+#[tauri::command]
+pub async fn launcher_create(webview: Webview) -> Result<Option<PathBuf>, String> {
+    check_caller(&webview)?;
+    let list_path = added_path().ok_or("cannot determine the local data directory")?;
+    let window = webview.window();
+    let start = config::user_path()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf));
+    let (tx, rx) = std::sync::mpsc::channel();
+    // Like tauri-plugin-dialog: the dialog is built on the main (GTK) thread, awaited elsewhere.
+    webview
+        .run_on_main_thread(move || {
+            let mut dialog = rfd::AsyncFileDialog::new()
+                .set_title("New config")
+                .set_file_name("config.toml")
+                .add_filter("TOML", &["toml"])
+                .set_parent(&window);
+            if let Some(dir) = start {
+                dialog = dialog.set_directory(dir);
+            }
+            let picked = dialog.save_file();
+            std::thread::spawn(move || {
+                let _ = tx.send(tauri::async_runtime::block_on(picked));
+            });
+        })
+        .map_err(|e| e.to_string())?;
+    let picked = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let path = std::path::absolute(picked.path()).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        fs::write(&path, NEW_CONFIG)
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
+    save_list(&list_path, &add_config(load_list(&list_path), path.clone()))?;
+    spawn_editor(path.clone())?;
+    Ok(Some(path))
+}
+
+/// Removes an added config from the launcher (the file is kept).
+#[tauri::command]
+pub fn launcher_forget(webview: Webview, config: PathBuf) -> Result<(), String> {
+    check_caller(&webview)?;
+    let list_path = added_path().ok_or("cannot determine the local data directory")?;
+    let mut list: Vec<PathBuf> = load_list(&list_path);
+    let len = list.len();
+    list.retain(|p| *p != config);
+    if list.len() == len {
+        return Err(format!("{} is not an added config", config.display()));
+    }
+    save_list(&list_path, &list)
 }
 
 #[cfg(test)]
@@ -332,6 +426,14 @@ mod tests {
     }
 
     #[test]
+    fn adds_config() {
+        let list = add_config(vec!["a".into(), "b".into()], "b".into());
+        assert_eq!(list, [PathBuf::from("b"), PathBuf::from("a")]);
+        assert_eq!(add_config(Vec::new(), "c".into()), [PathBuf::from("c")]);
+        assert!(Config::parse(NEW_CONFIG).unwrap().apps.is_empty());
+    }
+
+    #[test]
     fn lists_sources() {
         let dir = temp_dir("launcher");
         let good = dir.join("good.toml");
@@ -354,6 +456,7 @@ mod tests {
                 ("user", good.clone()),
                 ("user", bad.clone()),
                 ("user", good.clone()),
+                ("added", good.clone()),
             ],
         );
         let paths: Vec<_> = sources.configs.iter().map(|c| c.path.clone()).collect();
@@ -371,7 +474,11 @@ mod tests {
         assert!(sources.has_config(&bad));
         assert!(!sources.has_config(&missing));
 
-        let user_missing = sources_from(Vec::new(), vec![("user", missing.clone())]);
+        let user_missing = sources_from(
+            Vec::new(),
+            vec![("user", missing.clone()), ("added", missing.clone())],
+        );
+        assert_eq!(user_missing.configs.len(), 1);
         assert!(!user_missing.configs[0].exists);
         assert!(user_missing.has_config(&missing));
         fs::remove_dir_all(dir).unwrap();
