@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-10-28
 
 ### Added
 
@@ -24,3 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Launcher `New config…` button: creates a config file anywhere with a native save dialog (pre-filled with a commented example of every key), lists it in the launcher and opens it in the editor.
 - Docker release builds (`scripts/build.sh [--fast] [linux|windows]...`): Linux `.deb`/`.rpm`/`.AppImage`, Windows NSIS setup and portable exe; one platform at a time, `--fast` for quicker thin-LTO rebuilds.
 - `scripts/check.sh`: `cargo fmt --check`, clippy (Linux and Windows) and tests in Docker; no host toolchain or WSL needed.
+
+[Unreleased]: https://github.com/MickaelBlet/WebOverlay/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/MickaelBlet/WebOverlay/releases/tag/v0.1.0
