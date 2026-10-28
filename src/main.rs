@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
+mod editor;
 mod header;
 mod icon;
 mod inject;
@@ -16,7 +17,7 @@ use crate::config::Config;
 use crate::window::AppWindow;
 
 const USAGE: &str = "\
-Usage: weboverlay [--config <path>] [--list] [--maximized] [<app>...]
+Usage: weboverlay [--config <path>] [--list] [--edit] [--maximized] [<app>...]
 
 Opens the given apps from the config (all apps if none given).
 
@@ -24,12 +25,14 @@ Options:
   -c, --config <path>  Config file (default: config.toml next to the executable,
                        else <config dir>/weboverlay/config.toml)
   -l, --list           List configured apps and exit
+  -e, --edit           Open the config editor only (works with a missing or invalid config)
   -m, --maximized      Start the windows maximized (overrides the config)
   -h, --help           Show this help";
 
 struct Args {
     config: Option<PathBuf>,
     list: bool,
+    edit: bool,
     maximized: bool,
     apps: Vec<String>,
 }
@@ -38,6 +41,7 @@ fn parse_args() -> Result<Option<Args>> {
     let mut args = Args {
         config: None,
         list: false,
+        edit: false,
         maximized: false,
         apps: Vec::new(),
     };
@@ -49,6 +53,7 @@ fn parse_args() -> Result<Option<Args>> {
                 return Ok(None);
             }
             "-l" | "--list" => args.list = true,
+            "-e" | "--edit" => args.edit = true,
             "-m" | "--maximized" => args.maximized = true,
             "-c" | "--config" => {
                 args.config = Some(it.next().context("--config needs a path")?.into());
@@ -60,7 +65,14 @@ fn parse_args() -> Result<Option<Args>> {
     Ok(Some(args))
 }
 
-fn prepare() -> Result<Option<Vec<Arc<AppWindow>>>> {
+struct Launch {
+    config_path: PathBuf,
+    /// Empty in `--edit` mode.
+    apps: Vec<Arc<AppWindow>>,
+    edit: bool,
+}
+
+fn prepare() -> Result<Option<Launch>> {
     let Some(args) = parse_args()? else {
         return Ok(None);
     };
@@ -68,6 +80,14 @@ fn prepare() -> Result<Option<Vec<Arc<AppWindow>>>> {
         Some(path) => path,
         None => config::default_path()?,
     };
+    if args.edit {
+        // The config may be missing or invalid: that's what the editor is for.
+        return Ok(Some(Launch {
+            config_path,
+            apps: Vec::new(),
+            edit: true,
+        }));
+    }
     let mut config = Config::load(&config_path)?;
 
     if args.list {
@@ -93,7 +113,7 @@ fn prepare() -> Result<Option<Vec<Arc<AppWindow>>>> {
         .context("cannot determine the user data directory")?
         .join("weboverlay")
         .join("profiles");
-    config
+    let apps = config
         .apps
         .into_iter()
         .map(|mut app| {
@@ -106,13 +126,17 @@ fn prepare() -> Result<Option<Vec<Arc<AppWindow>>>> {
                 profile_dir,
             }))
         })
-        .collect::<Result<_>>()
-        .map(Some)
+        .collect::<Result<_>>()?;
+    Ok(Some(Launch {
+        config_path,
+        apps,
+        edit: false,
+    }))
 }
 
 fn main() -> ExitCode {
-    let apps = match prepare() {
-        Ok(Some(apps)) => apps,
+    let launch = match prepare() {
+        Ok(Some(launch)) => launch,
         Ok(None) => return ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("weboverlay: {e:#}");
@@ -122,9 +146,22 @@ fn main() -> ExitCode {
 
     let result = tauri::Builder::default()
         .manage(header::States::default())
-        .invoke_handler(tauri::generate_handler![header::header_action])
+        .manage(editor::Editor {
+            config_path: launch.config_path,
+            relaunch_args: editor::strip_edit_flag(std::env::args_os().skip(1)),
+        })
+        .invoke_handler(tauri::generate_handler![
+            header::header_action,
+            editor::editor_files,
+            editor::editor_read,
+            editor::editor_write,
+            editor::editor_restart,
+        ])
         .setup(move |app| {
-            for window in apps {
+            if launch.edit {
+                editor::open(app.handle())?;
+            }
+            for window in launch.apps {
                 window::open(app.handle(), window)?;
             }
             Ok(())

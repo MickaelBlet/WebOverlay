@@ -86,12 +86,16 @@ pub fn default_path() -> Result<PathBuf> {
 }
 
 fn exe_dir() -> Option<PathBuf> {
+    exe_path()?.parent().map(Path::to_path_buf)
+}
+
+/// The executable the user launched (the `.AppImage` file itself for AppImages).
+pub fn exe_path() -> Option<PathBuf> {
     // Inside an AppImage the executable lives in a temporary mount; use the image's location.
-    let exe = match std::env::var_os("APPIMAGE") {
-        Some(appimage) => PathBuf::from(appimage),
-        None => std::env::current_exe().ok()?,
-    };
-    exe.parent().map(Path::to_path_buf)
+    match std::env::var_os("APPIMAGE") {
+        Some(appimage) => Some(PathBuf::from(appimage)),
+        None => std::env::current_exe().ok(),
+    }
 }
 
 impl Config {
@@ -99,8 +103,12 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let text = fs::read_to_string(path)
             .with_context(|| format!("cannot read config {}", path.display()))?;
-        let mut config =
-            Self::parse(&text).with_context(|| format!("invalid config {}", path.display()))?;
+        Self::parse_at(&text, path).with_context(|| format!("invalid config {}", path.display()))
+    }
+
+    /// Parses `text` as the config file at `path` (relative script/style paths resolved).
+    pub fn parse_at(text: &str, path: &Path) -> Result<Self> {
+        let mut config = Self::parse(text)?;
         let base = path.parent().unwrap_or(Path::new("."));
         for app in &mut config.apps {
             for script in &mut app.scripts {

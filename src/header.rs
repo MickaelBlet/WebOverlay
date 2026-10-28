@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Url, Webview};
 
+use crate::editor;
 use crate::icon;
 use crate::window::{self, AppWindow};
 
@@ -206,6 +207,10 @@ pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
             let result = content.set_zoom(zoom);
             push_state(handle, &label);
             result
+        }
+        "edit" => {
+            editor::open_later(handle);
+            Ok(())
         }
         "minimize" => window.minimize(),
         "toggle_maximize" => match window.is_maximized() {

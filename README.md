@@ -3,10 +3,11 @@
 Open any website as a standalone desktop webapp (Tauri 2) and inject your own JavaScript and CSS into it.
 
 - One window per app, isolated profile (cookies, storage) per app.
-- Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, open in browser, window controls.
+- Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, edit config, open in browser, window controls.
   Shortcuts: Alt+←/→, F5 / Ctrl+R.
 - Site favicon as window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows.
 - Scripts and styles injected on every page load, filtered by URL wildcards.
+- Built-in editor for the config and its script/style files (TOML/JS/CSS highlighting).
 - Off-host links and popups open in the system browser.
 - Remote pages get no Tauri IPC access.
 
@@ -27,7 +28,7 @@ Windows: Rust (MSVC toolchain) and WebView2 (preinstalled on Windows 10/11).
 ```sh
 cargo run -- --config examples/config.toml demo   # dev
 scripts/build.sh                                  # release builds in Docker (see below)
-weboverlay [--config <path>] [--list] [--maximized] [<app>...]  # no app = open all
+weboverlay [--config <path>] [--list] [--edit] [--maximized] [<app>...]  # no app = open all
 ```
 
 ## Release builds
@@ -71,6 +72,16 @@ scripts = [
 | `matches` | Wildcards (`*`) on `location.href`, case-insensitive; empty = every page |
 
 Paths are relative to the config file. Files are read at startup: restart the app after editing.
+
+## Editor
+
+The pencil button in the header (or `weboverlay --edit`, which opens only the editor and works with a
+missing or invalid config) edits `config.toml` and the script/style files it references:
+
+- TOML/JS/CSS highlighting, line numbers, Tab / Shift+Tab indent, Ctrl+S save.
+- `config.toml` is validated before saving: an invalid config is refused with the error shown.
+- Files referenced by the config but missing are marked `new` and created on save.
+- Restart relaunches WebOverlay (without `--edit`) to apply the changes.
 
 Each script runs inside its own function wrapped in `try/catch`; errors are logged to the devtools console
 (right click → Inspect in debug builds).

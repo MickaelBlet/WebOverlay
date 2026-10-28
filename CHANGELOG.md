@@ -18,4 +18,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Off-host links and popups open in the system browser; allowed-host popups keep `window.opener` (OAuth).
 - Remote pages get no Tauri IPC access.
 - Start maximized: `maximized = true` per app or `--maximized` on the command line.
+- Built-in config editor (header pencil button or `--edit`): `config.toml` and its script/style files, TOML/JS/CSS highlighting, config validated on save, Restart button.
 - Docker release builds: Linux `.deb`/`.rpm`/`.AppImage`, Windows NSIS setup and portable exe.
