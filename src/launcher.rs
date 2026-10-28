@@ -23,14 +23,26 @@ pub const LAUNCHER_LABEL: &str = "weboverlay:launcher";
 const RECENT_MAX: usize = 10;
 
 /// Content of a config created from the launcher.
-const NEW_CONFIG: &str = "\
-# WebOverlay config: one [[app]] table per window. Script/style paths are relative to this file.
+const NEW_CONFIG: &str = r#"# WebOverlay config: one [[app]] table per window. Script/style paths are relative to this file.
+# Uncomment and adapt the example below; every key except `name` and `url` is optional.
 
 # [[app]]
-# name = \"example\"
-# url = \"https://example.com/\"
-# title = \"Example\"
-";
+# name = "example"                    # [A-Za-z0-9_-]+, unique (window label, profile dir)
+# url = "https://example.com/"        # start page
+# title = "Example"                   # window title (default: page title)
+# width = 1200                        # default 1200
+# height = 800                        # default 800
+# maximized = false                   # width/height still apply when restored
+# user_agent = "Mozilla/5.0 ..."      # default: WebView user agent
+# allowed_hosts = ["example.com", "*.example.com"]   # default: host of `url`; others open in the system browser
+# styles = [
+#   { path = "example/style.css", matches = ["https://example.com/*"] },   # matches: default every page
+# ]
+# scripts = [
+#   { path = "example/early.js", run_at = "document-start" },              # document-start | document-end (default) | document-idle
+#   { path = "example/main.js", run_at = "document-end", matches = ["https://example.com/*"] },
+# ]
+"#;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecentEntry {
@@ -431,6 +443,20 @@ mod tests {
         assert_eq!(list, [PathBuf::from("b"), PathBuf::from("a")]);
         assert_eq!(add_config(Vec::new(), "c".into()), [PathBuf::from("c")]);
         assert!(Config::parse(NEW_CONFIG).unwrap().apps.is_empty());
+    }
+
+    #[test]
+    fn new_config_example_parses() {
+        let uncommented: String = NEW_CONFIG
+            .lines()
+            .skip(3)
+            .map(|line| format!("{}\n", line.strip_prefix("# ").unwrap_or(line)))
+            .collect();
+        let config = Config::parse(&uncommented).unwrap();
+        let app = &config.apps[0];
+        assert_eq!(app.name, "example");
+        assert_eq!(app.scripts.len(), 2);
+        assert_eq!(app.styles.len(), 1);
     }
 
     #[test]
