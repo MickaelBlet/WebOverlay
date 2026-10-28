@@ -150,6 +150,8 @@
     overflow: hidden;
   }
   #hl { pointer-events: none; color: var(--fg); }
+  /* The UA stylesheet sets `code { font-family: monospace }`, which would differ from the textarea font. */
+  #hl code { font: inherit; }
   #text {
     overflow: auto;
     resize: none;
