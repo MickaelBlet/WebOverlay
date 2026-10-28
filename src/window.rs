@@ -66,6 +66,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
         .title(app.config.title.as_deref().unwrap_or(&app.config.name))
         .inner_size(app.config.width, app.config.height)
         .decorations(false)
+        .maximized(app.config.maximized)
         .build()?;
     icon::set_app_id(&window, &app.config.name);
     header::register(handle, &label, app.clone());

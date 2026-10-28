@@ -23,6 +23,9 @@ pub struct AppConfig {
     pub width: f64,
     #[serde(default = "default_height")]
     pub height: f64,
+    /// Start maximized (`width`/`height` still apply when restored).
+    #[serde(default)]
+    pub maximized: bool,
     pub user_agent: Option<String>,
     /// Host wildcards allowed inside the window; anything else opens in the system browser.
     /// Defaults to the host of `url`.
@@ -195,6 +198,7 @@ mod tests {
         assert_eq!(app.allowed_hosts, ["example.com"]);
         assert_eq!(app.scripts[0].run_at, RunAt::DocumentStart);
         assert_eq!(app.width, 1200.0);
+        assert!(!app.maximized);
     }
 
     #[test]

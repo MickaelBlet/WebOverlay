@@ -16,7 +16,7 @@ use crate::config::Config;
 use crate::window::AppWindow;
 
 const USAGE: &str = "\
-Usage: weboverlay [--config <path>] [--list] [<app>...]
+Usage: weboverlay [--config <path>] [--list] [--maximized] [<app>...]
 
 Opens the given apps from the config (all apps if none given).
 
@@ -24,11 +24,13 @@ Options:
   -c, --config <path>  Config file (default: config.toml next to the executable,
                        else <config dir>/weboverlay/config.toml)
   -l, --list           List configured apps and exit
+  -m, --maximized      Start the windows maximized (overrides the config)
   -h, --help           Show this help";
 
 struct Args {
     config: Option<PathBuf>,
     list: bool,
+    maximized: bool,
     apps: Vec<String>,
 }
 
@@ -36,6 +38,7 @@ fn parse_args() -> Result<Option<Args>> {
     let mut args = Args {
         config: None,
         list: false,
+        maximized: false,
         apps: Vec::new(),
     };
     let mut it = std::env::args().skip(1);
@@ -46,6 +49,7 @@ fn parse_args() -> Result<Option<Args>> {
                 return Ok(None);
             }
             "-l" | "--list" => args.list = true,
+            "-m" | "--maximized" => args.maximized = true,
             "-c" | "--config" => {
                 args.config = Some(it.next().context("--config needs a path")?.into());
             }
@@ -92,7 +96,8 @@ fn prepare() -> Result<Option<Vec<Arc<AppWindow>>>> {
     config
         .apps
         .into_iter()
-        .map(|app| {
+        .map(|mut app| {
+            app.maximized |= args.maximized;
             let scripts = inject::build_scripts(&app)?;
             let profile_dir = profiles.join(&app.name);
             Ok(Arc::new(AppWindow {

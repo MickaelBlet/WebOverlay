@@ -27,7 +27,7 @@ Windows: Rust (MSVC toolchain) and WebView2 (preinstalled on Windows 10/11).
 ```sh
 cargo run -- --config examples/config.toml demo   # dev
 scripts/build.sh                                  # release builds in Docker (see below)
-weboverlay [--config <path>] [--list] [<app>...]  # no app = open all
+weboverlay [--config <path>] [--list] [--maximized] [<app>...]  # no app = open all
 ```
 
 ## Release builds
@@ -56,6 +56,7 @@ url = "https://mail.google.com"
 title = "Gmail"                    # optional, default: page title
 width = 1200                       # optional
 height = 800                       # optional
+maximized = false                  # optional, start maximized (also `--maximized` on the command line)
 user_agent = "..."                 # optional
 allowed_hosts = ["*.google.com"]   # optional, default: host of url; `*.x` also matches `x`
 styles = [{ path = "gmail/dark.css", matches = [] }]
