@@ -112,6 +112,7 @@
     font-weight: 600;
     font-size: 15px;
   }
+  img.avatar { object-fit: contain; }
   .text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { color: var(--muted); font-size: 12px; }
@@ -166,7 +167,8 @@
     return `${Math.floor(d / 86400)} d ago`;
   }
 
-  function avatar(name) {
+  function avatar(name, icon) {
+    if (icon) return el("img", { className: "avatar", src: icon, alt: "" });
     let hash = 0;
     for (const c of name) hash = (hash * 31 + c.codePointAt(0)) >>> 0;
     const letter = [...name.trim()][0] || "?";
@@ -186,21 +188,34 @@
     }
   }
 
-  function card(title, sub, config, app, disabled = false) {
+  // Favicon downloads of apps without cached icon, by config + app: one try per launcher run.
+  const fetched = new Map();
+
+  function fetchIcon(config, app) {
+    const key = JSON.stringify([config, app]);
+    if (!fetched.has(key)) fetched.set(key, invoke("launcher_icon", { config, app }).catch(() => null));
+    return fetched.get(key);
+  }
+
+  function card(title, sub, config, app, icon, disabled = false) {
+    const face = avatar(title, icon);
     const button = el(
       "button",
       { className: "card", disabled, title: disabled ? "No longer in its config" : `${title} — ${config}` },
-      avatar(title),
+      face,
       el("span", { className: "text" }, el("span", { textContent: title }), el("span", { className: "sub", textContent: sub })),
     );
     button.addEventListener("click", () => run("launcher_open", { config, app }, title));
+    if (!icon && !disabled) {
+      fetchIcon(config, app).then((url) => url && face.replaceWith(avatar(title, url)));
+    }
     return button;
   }
 
   function recentSection(recent) {
     const grid = el("div", { className: "grid" });
     for (const r of recent) {
-      grid.append(card(r.title, `${host(r.url)} · ${ago(r.opened)}`, r.config, r.app, !r.available));
+      grid.append(card(r.title, `${host(r.url)} · ${ago(r.opened)}`, r.config, r.app, r.icon, !r.available));
     }
     return el("section", {}, el("div", { className: "head" }, el("span", { className: "title", textContent: "Recent" })), grid);
   }
@@ -244,7 +259,7 @@
       section.append(el("div", { className: "note", textContent: "No app defined." }));
     } else {
       const grid = el("div", { className: "grid" });
-      for (const a of c.apps) grid.append(card(a.title, host(a.url), c.path, a.name));
+      for (const a of c.apps) grid.append(card(a.title, host(a.url), c.path, a.name, a.icon));
       section.append(grid);
     }
     return section;

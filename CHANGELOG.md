@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Launcher shows each app's favicon (the last one seen by the app, else the site's `/favicon.ico`), cached in `<local data dir>/weboverlay/icons/`.
+
+### Fixed
+
+- Favicon download trusts the OS certificate store, so the window icon works behind corporate TLS inspection (Windows kept the app icon).
+- Windows: the launcher and editor show the app icon in the taskbar (the launcher showed an app favicon); the launcher gets its own taskbar button, and its pin reopens the launcher.
+
 ## [0.1.0] - 2026-10-28
 
 ### Added

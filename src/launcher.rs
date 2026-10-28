@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Webview, WebviewUrl, WebviewWindowBuilder};
 
 use crate::config::{self, Config};
+use crate::icon;
 use crate::inject;
 use crate::window::AppWindow;
 
@@ -60,6 +61,8 @@ struct RecentItem {
     entry: RecentEntry,
     /// The config still parses and defines the app.
     available: bool,
+    /// Cached favicon (`data:` URL), filled by `launcher_list`.
+    icon: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -67,6 +70,8 @@ struct AppEntry {
     name: String,
     title: String,
     url: String,
+    /// Cached favicon (`data:` URL), filled by `launcher_list`.
+    icon: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -86,7 +91,7 @@ pub struct Sources {
 }
 
 pub fn open(handle: &AppHandle) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         handle,
         LAUNCHER_LABEL,
         WebviewUrl::App("launcher.html".into()),
@@ -94,6 +99,7 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
     .title("WebOverlay")
     .inner_size(760.0, 560.0)
     .build()?;
+    icon::set_launcher_id(&window.as_ref().window());
     Ok(())
 }
 
@@ -190,6 +196,7 @@ fn config_entry(kind: &'static str, path: PathBuf) -> ConfigEntry {
                     title: app.title.unwrap_or(app.name.clone()),
                     name: app.name,
                     url: app.url.to_string(),
+                    icon: None,
                 })
                 .collect();
         }
@@ -217,7 +224,11 @@ fn sources_from(recent: Vec<RecentEntry>, locals: Vec<(&'static str, PathBuf)>) 
             let available = config
                 .as_ref()
                 .is_some_and(|c| c.find(&entry.app).is_some());
-            RecentItem { entry, available }
+            RecentItem {
+                entry,
+                available,
+                icon: None,
+            }
         })
         .collect();
     Sources { recent, configs }
@@ -258,6 +269,18 @@ impl Sources {
     fn has_config(&self, config: &Path) -> bool {
         self.configs.iter().any(|entry| entry.path == config)
     }
+
+    fn with_icons(mut self) -> Self {
+        for item in &mut self.recent {
+            item.icon = icon::cached(&item.entry.config, &item.entry.app);
+        }
+        for entry in &mut self.configs {
+            for app in &mut entry.apps {
+                app.icon = icon::cached(&entry.path, &app.name);
+            }
+        }
+        self
+    }
 }
 
 fn check_caller(webview: &Webview) -> Result<(), String> {
@@ -289,7 +312,32 @@ fn spawn(args: Vec<OsString>) -> Result<(), String> {
 #[tauri::command]
 pub fn launcher_list(webview: Webview) -> Result<Sources, String> {
     check_caller(&webview)?;
-    Ok(sources())
+    Ok(sources().with_icons())
+}
+
+/// Downloads the favicon of a listed app without cached icon (see `icon::fetch_cached`).
+#[tauri::command]
+pub async fn launcher_icon(
+    webview: Webview,
+    config: PathBuf,
+    app: String,
+) -> Result<Option<String>, String> {
+    check_caller(&webview)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        if !sources().lists(&config, Some(&app)) {
+            return Err(format!("{app} is not a listed app"));
+        }
+        let loaded = Config::load(&config).map_err(|e| format!("{e:#}"))?;
+        let entry = loaded.find(&app).ok_or("unknown app")?;
+        Ok(icon::fetch_cached(
+            &config,
+            &app,
+            &entry.url,
+            entry.user_agent.as_deref(),
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Opens `app` of `config` (all its apps when `None`) in a new process.

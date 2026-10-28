@@ -123,7 +123,6 @@ pub fn favicon(handle: &AppHandle, label: &str) -> Option<String> {
 }
 
 /// App shown in window `label`.
-#[cfg(windows)]
 pub fn app(handle: &AppHandle, label: &str) -> Option<Arc<AppWindow>> {
     lock(handle).get(label).map(|state| state.app.clone())
 }

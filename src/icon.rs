@@ -1,5 +1,6 @@
 //! Window icon (taskbar / Alt+Tab) from the site favicon, plus a per-app taskbar identity on Windows
-//! (own button, and a pin that relaunches the app with its config and favicon).
+//! (own button, and a pin that relaunches the app with its config and favicon). The last favicon of
+//! each app is cached as a PNG for the launcher.
 //!
 //! The favicon is downloaded from Rust: the page and the header cannot read cross-origin image bytes.
 //! Linux: only X11 window managers use the window icon; Wayland compositors use the `.desktop` file.
@@ -20,7 +21,11 @@ use crate::window::AppWindow;
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// Raster size for SVG favicons (downscaled per platform when applied).
 const SVG_SIZE: u32 = 128;
+/// Max size of the launcher icon cache (32 px avatars, HiDPI).
+const CACHE_SIZE: u32 = 64;
 const USER_AGENT: &str = "Mozilla/5.0 (compatible; WebOverlay)";
+#[cfg(windows)]
+const LAUNCHER_ID: &str = "dev.blet.weboverlay.launcher";
 
 /// Downloads `favicon` in the background and sets it as the icon of window `label`.
 /// Falls back to `/favicon.ico` for undecodable icons, then to the app icon.
@@ -39,13 +44,17 @@ pub fn update(handle: &AppHandle, label: &str, favicon: String, user_agent: Opti
         let Some(window) = handle.get_window(&label) else {
             return;
         };
+        let app = header::app(&handle, &label);
+        if let (Some(image), Some(app)) = (&image, &app) {
+            save_cached(&app_id(&app.config_path, &app.config.name), image);
+        }
         let icon = image.or_else(|| handle.default_window_icon().cloned());
         if let Some(icon) = icon {
             #[cfg(windows)]
             {
                 set_taskbar_icon(&window, &icon);
-                if let Some(app) = header::app(&handle, &label) {
-                    save_pin_icon(&window, &app, &icon);
+                if let Some(app) = &app {
+                    save_pin_icon(&window, app, &icon);
                 }
             }
             let _ = window.set_icon(icon);
@@ -74,7 +83,12 @@ fn fetch(url: &str, user_agent: &str) -> Option<Vec<u8>> {
     if let Some(data) = url.strip_prefix("data:") {
         return decode_data_url(data);
     }
+    // OS certificate store: corporate TLS inspection roots are trusted there, not in webpki-roots.
+    let tls = ureq::tls::TlsConfig::builder()
+        .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+        .build();
     let agent: ureq::Agent = ureq::Agent::config_builder()
+        .tls_config(tls)
         .timeout_global(Some(Duration::from_secs(10)))
         .build()
         .into();
@@ -214,16 +228,16 @@ fn set_taskbar_icon(window: &tauri::Window, icon: &Image<'_>) {
     }
 }
 
-/// Taskbar identity of an app: `dev.blet.weboverlay.<config path hash>.<name>`, so apps with the
-/// same name in different configs get their own button and pin.
-#[cfg_attr(not(windows), allow(dead_code))]
-fn app_id(app: &AppWindow) -> String {
+/// Identity of app `name` of the config at (absolute) `config_path`:
+/// `dev.blet.weboverlay.<config path hash>.<name>`, so apps with the same name in different configs
+/// get their own taskbar button, pin and cached icon.
+fn app_id(config_path: &Path, name: &str) -> String {
     // Windows paths are case-insensitive. FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
-    let path = app.config_path.to_string_lossy().to_lowercase();
+    let path = config_path.to_string_lossy().to_lowercase();
     let hash = path.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
     });
-    let mut id = format!("dev.blet.weboverlay.{hash:016x}.{}", app.config.name);
+    let mut id = format!("dev.blet.weboverlay.{hash:016x}.{name}");
     id.truncate(128); // AppUserModelID limit (the name is ASCII).
     id
 }
@@ -240,15 +254,60 @@ fn relaunch_command(exe: &Path, app: &AppWindow) -> String {
     )
 }
 
-/// Last favicon of an app as `.ico`: pinned buttons need an icon file.
-#[cfg_attr(not(windows), allow(dead_code))]
-fn pin_icon_path(app: &AppWindow) -> Option<PathBuf> {
+/// `<local data dir>/weboverlay/icons/<file>`.
+fn icons_path(file: &str) -> Option<PathBuf> {
     Some(
         dirs::data_local_dir()?
             .join("weboverlay")
             .join("icons")
-            .join(format!("{}.ico", app_id(app))),
+            .join(file),
     )
+}
+
+/// Last favicon of an app as `.ico`: pinned buttons need an icon file.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn pin_icon_path(app: &AppWindow) -> Option<PathBuf> {
+    icons_path(&format!(
+        "{}.ico",
+        app_id(&app.config_path, &app.config.name)
+    ))
+}
+
+/// Writes `icon` (downscaled to `CACHE_SIZE`) as the launcher icon of app `id` (errors are logged).
+fn save_cached(id: &str, icon: &Image<'_>) {
+    let Some(path) = icons_path(&format!("{id}.png")) else {
+        return;
+    };
+    if let Err(e) = write_image(&path, icon, CACHE_SIZE, image::ImageFormat::Png) {
+        eprintln!("weboverlay: cannot write {}: {e}", path.display());
+    }
+}
+
+/// Cached favicon of app `name` of `config_path`, as a `data:image/png` URL.
+pub fn cached(config_path: &Path, name: &str) -> Option<String> {
+    let path = icons_path(&format!("{}.png", app_id(config_path, name)))?;
+    let bytes = std::fs::read(path).ok()?;
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+/// Downloads `/favicon.ico` of `url` for an app never opened (the page favicon is only known once
+/// it ran), caches it and returns it like `cached`. Blocking.
+pub fn fetch_cached(
+    config_path: &Path,
+    name: &str,
+    url: &Url,
+    user_agent: Option<&str>,
+) -> Option<String> {
+    let favicon = url
+        .join("/favicon.ico")
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))?;
+    let image = decode(&fetch(favicon.as_str(), user_agent.unwrap_or(USER_AGENT))?)?;
+    save_cached(&app_id(config_path, name), &image);
+    cached(config_path, name)
 }
 
 /// Sets string properties of the window property store (read by the taskbar).
@@ -284,7 +343,7 @@ pub fn set_app_id(window: &tauri::Window, app: &AppWindow) {
         PKEY_AppUserModel_RelaunchDisplayNameResource, PKEY_AppUserModel_RelaunchIconResource,
     };
 
-    let id = app_id(app);
+    let id = app_id(&app.config_path, &app.config.name);
     let mut props = vec![(&PKEY_AppUserModel_ID, id.clone())];
     // The relaunch properties are only used together (display name required with the command).
     if let Some(exe) = crate::config::exe_path() {
@@ -316,6 +375,51 @@ pub fn set_app_id(window: &tauri::Window, app: &AppWindow) {
 #[cfg(not(windows))]
 pub fn set_app_id(_window: &tauri::Window, _app: &AppWindow) {}
 
+/// Taskbar identity of the launcher, so it doesn't share the exe group (whose cached icon can be
+/// an app favicon); a pinned button relaunches the launcher. Call from the main thread (COM).
+#[cfg(windows)]
+pub fn set_launcher_id(window: &tauri::Window) {
+    use windows::Win32::Storage::EnhancedStorage::{
+        PKEY_AppUserModel_ID, PKEY_AppUserModel_RelaunchCommand,
+        PKEY_AppUserModel_RelaunchDisplayNameResource, PKEY_AppUserModel_RelaunchIconResource,
+    };
+
+    let mut props = vec![(&PKEY_AppUserModel_ID, LAUNCHER_ID.to_owned())];
+    if let Some(exe) = crate::config::exe_path() {
+        props.push((
+            &PKEY_AppUserModel_RelaunchCommand,
+            format!("\"{}\"", exe.display()),
+        ));
+        props.push((
+            &PKEY_AppUserModel_RelaunchDisplayNameResource,
+            "WebOverlay".to_owned(),
+        ));
+        props.push((
+            &PKEY_AppUserModel_RelaunchIconResource,
+            format!("{},0", exe.display()),
+        ));
+    }
+    let props: Vec<_> = props.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    if let Err(e) = set_window_props(window, &props) {
+        eprintln!("weboverlay: cannot set taskbar id {LAUNCHER_ID}: {e}");
+    }
+    set_default_taskbar_icon(window);
+}
+
+#[cfg(not(windows))]
+pub fn set_launcher_id(_window: &tauri::Window) {}
+
+/// The app icon as `ICON_BIG`: tao only sets `ICON_SMALL`, the taskbar then picks its own.
+#[cfg(windows)]
+pub fn set_default_taskbar_icon(window: &tauri::Window) {
+    if let Some(icon) = window.app_handle().default_window_icon() {
+        set_taskbar_icon(window, icon);
+    }
+}
+
+#[cfg(not(windows))]
+pub fn set_default_taskbar_icon(_window: &tauri::Window) {}
+
 /// Writes `icon` as the app pin icon and points the window relaunch icon at it.
 #[cfg(windows)]
 fn save_pin_icon(window: &tauri::Window, app: &AppWindow, icon: &Image<'_>) {
@@ -324,7 +428,7 @@ fn save_pin_icon(window: &tauri::Window, app: &AppWindow, icon: &Image<'_>) {
     let Some(path) = pin_icon_path(app) else {
         return;
     };
-    if let Err(e) = write_ico(&path, icon) {
+    if let Err(e) = write_image(&path, icon, 256, image::ImageFormat::Ico) {
         eprintln!("weboverlay: cannot write {}: {e}", path.display());
         return;
     }
@@ -341,23 +445,28 @@ fn save_pin_icon(window: &tauri::Window, app: &AppWindow, icon: &Image<'_>) {
     });
 }
 
-/// `.ico` holding `icon`, downscaled to the 256 px ICO limit; written atomically (the shell may
-/// be reading the previous one).
-#[cfg_attr(not(windows), allow(dead_code))]
-fn write_ico(path: &Path, icon: &Image<'_>) -> anyhow::Result<()> {
+/// `icon` downscaled to fit `max` px (256 = ICO limit), written atomically (the shell or the
+/// launcher may be reading the previous one).
+fn write_image(
+    path: &Path,
+    icon: &Image<'_>,
+    max: u32,
+    format: image::ImageFormat,
+) -> anyhow::Result<()> {
     use anyhow::Context;
 
     let rgba = image::RgbaImage::from_raw(icon.width(), icon.height(), icon.rgba().to_vec())
         .context("invalid icon")?;
     let mut image = image::DynamicImage::ImageRgba8(rgba);
-    if image.width() > 256 || image.height() > 256 {
-        image = image.resize(256, 256, image::imageops::FilterType::Lanczos3);
+    if image.width() > max || image.height() > max {
+        image = image.resize(max, max, image::imageops::FilterType::Lanczos3);
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_extension("ico.tmp");
-    image.save_with_format(&tmp, image::ImageFormat::Ico)?;
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    image.save_with_format(&tmp, format)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
 }
@@ -426,12 +535,12 @@ mod tests {
 
     #[test]
     fn app_id_depends_on_config_path() {
-        let a = app_id(&app_window("C:\\Users\\me\\config.toml", "mail"));
-        assert_eq!(a, app_id(&app_window("c:\\users\\ME\\Config.toml", "mail")));
-        assert_ne!(a, app_id(&app_window("D:\\config.toml", "mail")));
+        let a = app_id(Path::new("C:\\Users\\me\\config.toml"), "mail");
+        assert_eq!(a, app_id(Path::new("c:\\users\\ME\\Config.toml"), "mail"));
+        assert_ne!(a, app_id(Path::new("D:\\config.toml"), "mail"));
         assert!(a.starts_with("dev.blet.weboverlay.") && a.ends_with(".mail"));
         assert!(!a.contains(' '));
-        assert!(app_id(&app_window("/c.toml", &"x".repeat(200))).len() <= 128);
+        assert!(app_id(Path::new("/c.toml"), &"x".repeat(200)).len() <= 128);
     }
 
     #[test]
@@ -447,13 +556,18 @@ mod tests {
     }
 
     #[test]
-    fn writes_ico() {
+    fn writes_images() {
         let dir = std::env::temp_dir().join(format!("weboverlay-ico-{}", std::process::id()));
         let path = dir.join("a.ico");
-        let icon = Image::new_owned(vec![255; 300 * 300 * 4], 300, 300);
-        write_ico(&path, &icon).unwrap();
+        let icon = Image::new_owned(vec![255; 300 * 150 * 4], 300, 150);
+        write_image(&path, &icon, 256, image::ImageFormat::Ico).unwrap();
         let ico = image::open(&path).unwrap();
-        assert_eq!((ico.width(), ico.height()), (256, 256));
+        assert_eq!((ico.width(), ico.height()), (256, 128));
+        let path = dir.join("a.png");
+        write_image(&path, &icon, CACHE_SIZE, image::ImageFormat::Png).unwrap();
+        let png = image::open(&path).unwrap();
+        assert_eq!((png.width(), png.height()), (CACHE_SIZE, CACHE_SIZE / 2));
+        assert!(!dir.join("a.png.tmp").exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

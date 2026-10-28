@@ -177,6 +177,7 @@ fn main() -> ExitCode {
             editor::editor_write,
             editor::editor_restart,
             launcher::launcher_list,
+            launcher::launcher_icon,
             launcher::launcher_open,
             launcher::launcher_edit,
             launcher::launcher_create,

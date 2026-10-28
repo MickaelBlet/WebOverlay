@@ -90,6 +90,8 @@ Paths are relative to the config file. Files are read at startup: restart the ap
   `<local data dir>/weboverlay/configs.json`; `Forget` removes one from the list (the file is kept).
 
 One click starts the app in a new WebOverlay process (`--config <path> <app>`); the launcher stays open.
+Cards show the app favicon: the last one seen by the app (cached as
+`<local data dir>/weboverlay/icons/<id>.png`), else the site's `/favicon.ico`, else a letter.
 
 ## Editor
 
