@@ -16,10 +16,11 @@ cargo fmt
 cargo build --release --target x86_64-pc-windows-gnu   # quick Windows exe from WSL (needs WebView2Loader.dll beside it)
 cargo clippy --target x86_64-pc-windows-gnu -- -D warnings   # type-check the cfg(windows) code locally
 scripts/build.sh                                  # release bundles in Docker -> dist-tauri/{linux,windows}/
+scripts/build.sh --fast linux                     # one OS only, thin LTO (quicker rebuild)
 ```
 
 - Linux builds need the WebKitGTK dev packages listed in README.md.
-- `scripts/build.sh` = `docker buildx bake` (Dockerfile modeled on ../ProjectScaffold-Viewer): Linux deb/rpm/AppImage and Windows NSIS setup + portable exe via `cargo-xwin` (MSVC target), built in parallel. Tool versions are pinned by digest/checksum in the Dockerfile (incl. `TAURI_CLI_VERSION`).
+- `scripts/build.sh` = `docker buildx bake` (Dockerfile modeled on ../ProjectScaffold-Viewer): Linux deb/rpm/AppImage and Windows NSIS setup + portable exe via `cargo-xwin` (MSVC target), built in parallel (bake targets `linux` / `windows`, each exported to its own `dist-tauri/<os>`). Tool versions are pinned by digest/checksum in the Dockerfile (incl. `RUST_VERSION`, `TAURI_CLI_VERSION`, `CARGO_XWIN_VERSION`; tauri-cli and cargo-xwin are prebuilt release binaries). Crates are fetched once in the `deps` layer (keyed on Cargo.toml/Cargo.lock); `target` and `/root/.cache` (xwin CRT/SDK, tauri bundler tools) are per-OS cache mounts. `--fast` (`FAST=1`) overrides the release profile via `CARGO_PROFILE_RELEASE_*` env and uses separate `-fast` target caches.
 - Release builds use `windows_subsystem = "windows"` (`not(debug_assertions)` only): no console output on Windows (`--list`, `--help`, errors are invisible there). Debug builds / `cargo run` keep the console.
 
 ## Architecture

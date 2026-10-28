@@ -34,7 +34,7 @@ weboverlay                                        # launcher
 
 ## Release builds
 
-`scripts/build.sh` (`docker buildx bake`) builds both platforms in parallel from Linux/WSL, only Docker required:
+`scripts/build.sh` (`docker buildx bake`) builds both platforms in parallel from Linux/WSL, only Docker required. `scripts/build.sh [--fast] [linux|windows]...` builds only the given platforms; `--fast` trades a slightly bigger binary for a much quicker rebuild (thin LTO):
 
 - `dist-tauri/linux/`: `.deb`, `.rpm`, `.AppImage`
 - `dist-tauri/windows/`: NSIS `*-setup.exe` and `WebOverlay-portable.exe` (cargo-xwin, MSVC target)
