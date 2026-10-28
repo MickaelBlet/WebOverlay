@@ -29,6 +29,7 @@ Windows: Rust (MSVC toolchain) and WebView2 (preinstalled on Windows 10/11).
 cargo run -- --config examples/config.toml demo   # dev
 scripts/build.sh                                  # release builds in Docker (see below)
 weboverlay [--config <path>] [--list] [--edit] [--maximized] [<app>...]  # no app = open all
+weboverlay                                        # launcher
 ```
 
 ## Release builds
@@ -72,6 +73,17 @@ scripts = [
 | `matches` | Wildcards (`*`) on `location.href`, case-insensitive; empty = every page |
 
 Paths are relative to the config file. Files are read at startup: restart the app after editing.
+
+## Launcher
+
+`weboverlay` without app nor `--config` opens the launcher instead of the apps:
+
+- **Recent**: the last 10 apps opened (from the launcher or the command line), stored in
+  `<local data dir>/weboverlay/recent.json`; apps no longer in their config are greyed out.
+- **Folder config** (`config.toml` next to the executable, when present) and **User config**
+  (`<config dir>/weboverlay/config.toml`): their apps, `Open all`, and `Edit` (`Create` when missing).
+
+One click starts the app in a new WebOverlay process (`--config <path> <app>`); the launcher stays open.
 
 ## Editor
 

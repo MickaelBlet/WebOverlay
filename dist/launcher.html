@@ -1,0 +1,256 @@
+<!doctype html>
+<!-- Launcher: recent apps and the apps of the local configs. Data and actions come from Rust (launcher_* commands). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>WebOverlay</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f3f4f6;
+    --fg: #111827;
+    --muted: #6b7280;
+    --hover: rgba(0, 0, 0, 0.06);
+    --border: #d1d5db;
+    --accent: #2563eb;
+    --error: #dc2626;
+    --ok: #059669;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111827;
+      --panel: #1f2937;
+      --fg: #f3f4f6;
+      --muted: #9ca3af;
+      --hover: rgba(255, 255, 255, 0.06);
+      --border: #374151;
+      --accent: #60a5fa;
+      --error: #f87171;
+      --ok: #34d399;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  body { display: flex; flex-direction: column; }
+  button {
+    height: 26px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+  }
+  button:hover:not(:disabled) { background: var(--hover); }
+  button:disabled { opacity: 0.5; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  #list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 20px 20px; }
+  section { margin-top: 14px; }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+  }
+  .title {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex: none;
+  }
+  .path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    direction: rtl;
+    text-align: left;
+  }
+  .note { color: var(--muted); padding: 6px 0; }
+  .note.error { color: var(--error); white-space: pre-wrap; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: auto;
+    padding: 10px;
+    text-align: left;
+    background: var(--panel);
+    border-color: transparent;
+    cursor: pointer;
+  }
+  .card:hover:not(:disabled) { border-color: var(--border); background: var(--panel); filter: brightness(0.98); }
+  .card:disabled { cursor: default; }
+  .avatar {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 12px; }
+
+  #status {
+    display: flex;
+    height: 26px;
+    padding: 0 14px;
+    align-items: center;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 12px;
+  }
+  #message { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #message.error { color: var(--error); }
+  #message.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+  <main id="list"></main>
+  <div id="status"><span id="message"></span></div>
+
+<script>
+  const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, props = {}, ...children) {
+    const node = Object.assign(document.createElement(tag), props);
+    node.append(...children);
+    return node;
+  }
+
+  function setMessage(text, kind = "") {
+    $("message").textContent = text;
+    $("message").className = kind;
+  }
+
+  function host(url) {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  }
+
+  function ago(seconds) {
+    const d = Date.now() / 1000 - seconds;
+    if (d < 60) return "just now";
+    if (d < 3600) return `${Math.floor(d / 60)} min ago`;
+    if (d < 86400) return `${Math.floor(d / 3600)} h ago`;
+    return `${Math.floor(d / 86400)} d ago`;
+  }
+
+  function avatar(name) {
+    let hash = 0;
+    for (const c of name) hash = (hash * 31 + c.codePointAt(0)) >>> 0;
+    const letter = [...name.trim()][0] || "?";
+    return el("span", {
+      className: "avatar",
+      textContent: letter.toUpperCase(),
+      style: `background: hsl(${hash % 360} 55% 45%)`,
+    });
+  }
+
+  async function run(cmd, args, label) {
+    try {
+      await invoke(cmd, args);
+      setMessage(`Started ${label}`, "ok");
+    } catch (e) {
+      setMessage(String(e), "error");
+    }
+  }
+
+  function card(title, sub, config, app, disabled = false) {
+    const button = el(
+      "button",
+      { className: "card", disabled, title: disabled ? "No longer in its config" : `${title} — ${config}` },
+      avatar(title),
+      el("span", { className: "text" }, el("span", { textContent: title }), el("span", { className: "sub", textContent: sub })),
+    );
+    button.addEventListener("click", () => run("launcher_open", { config, app }, title));
+    return button;
+  }
+
+  function recentSection(recent) {
+    const grid = el("div", { className: "grid" });
+    for (const r of recent) {
+      grid.append(card(r.title, `${host(r.url)} · ${ago(r.opened)}`, r.config, r.app, !r.available));
+    }
+    return el("section", {}, el("div", { className: "head" }, el("span", { className: "title", textContent: "Recent" })), grid);
+  }
+
+  function configSection(c) {
+    const head = el(
+      "div",
+      { className: "head" },
+      el("span", { className: "title", textContent: c.kind === "user" ? "User config" : "Folder config" }),
+      // rtl keeps the end of long paths visible; the bdi keeps the path itself ltr.
+      el("span", { className: "path", title: c.path }, el("bdi", { dir: "ltr", textContent: c.path })),
+    );
+    if (c.apps.length) {
+      const all = el("button", { textContent: "Open all" });
+      all.addEventListener("click", () => run("launcher_open", { config: c.path, app: null }, "all apps"));
+      head.append(all);
+    }
+    const edit = el("button", { textContent: c.exists ? "Edit" : "Create" });
+    edit.addEventListener("click", () => run("launcher_edit", { config: c.path }, "the editor"));
+    head.append(edit);
+
+    const section = el("section", {}, head);
+    if (!c.exists) {
+      section.append(el("div", { className: "note", textContent: "No config yet." }));
+    } else if (c.error) {
+      section.append(el("div", { className: "note error", textContent: c.error }));
+    } else if (!c.apps.length) {
+      section.append(el("div", { className: "note", textContent: "No app defined." }));
+    } else {
+      const grid = el("div", { className: "grid" });
+      for (const a of c.apps) grid.append(card(a.title, host(a.url), c.path, a.name));
+      section.append(grid);
+    }
+    return section;
+  }
+
+  async function refresh() {
+    try {
+      const { recent, configs } = await invoke("launcher_list");
+      const sections = [];
+      if (recent.length) sections.push(recentSection(recent));
+      sections.push(...configs.map(configSection));
+      $("list").replaceChildren(...sections);
+    } catch (e) {
+      setMessage(String(e), "error");
+    }
+  }
+
+  // Pick up config edits and new recent entries made by other instances.
+  window.addEventListener("focus", refresh);
+  refresh();
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ mod editor;
 mod header;
 mod icon;
 mod inject;
+mod launcher;
 mod window;
 
 use std::path::PathBuf;
@@ -19,7 +20,8 @@ use crate::window::AppWindow;
 const USAGE: &str = "\
 Usage: weboverlay [--config <path>] [--list] [--edit] [--maximized] [<app>...]
 
-Opens the given apps from the config (all apps if none given).
+Opens the given apps from the config (all apps if none given). Without app nor --config,
+opens the launcher (recent apps and the apps of the local configs).
 
 Options:
   -c, --config <path>  Config file (default: config.toml next to the executable,
@@ -65,27 +67,41 @@ fn parse_args() -> Result<Option<Args>> {
     Ok(Some(args))
 }
 
+enum Mode {
+    Apps,
+    Edit,
+    Launcher,
+}
+
 struct Launch {
     config_path: PathBuf,
-    /// Empty in `--edit` mode.
+    /// Empty unless `Mode::Apps`.
     apps: Vec<Arc<AppWindow>>,
-    edit: bool,
+    mode: Mode,
 }
 
 fn prepare() -> Result<Option<Launch>> {
     let Some(args) = parse_args()? else {
         return Ok(None);
     };
+    let launcher = args.config.is_none() && args.apps.is_empty() && !args.edit && !args.list;
     let config_path = match args.config {
         Some(path) => path,
         None => config::default_path()?,
     };
+    if launcher {
+        return Ok(Some(Launch {
+            config_path,
+            apps: Vec::new(),
+            mode: Mode::Launcher,
+        }));
+    }
     if args.edit {
         // The config may be missing or invalid: that's what the editor is for.
         return Ok(Some(Launch {
             config_path,
             apps: Vec::new(),
-            edit: true,
+            mode: Mode::Edit,
         }));
     }
     let mut config = Config::load(&config_path)?;
@@ -126,11 +142,12 @@ fn prepare() -> Result<Option<Launch>> {
                 profile_dir,
             }))
         })
-        .collect::<Result<_>>()?;
+        .collect::<Result<Vec<_>>>()?;
+    launcher::record(&config_path, &apps);
     Ok(Some(Launch {
         config_path,
         apps,
-        edit: false,
+        mode: Mode::Apps,
     }))
 }
 
@@ -156,10 +173,15 @@ fn main() -> ExitCode {
             editor::editor_read,
             editor::editor_write,
             editor::editor_restart,
+            launcher::launcher_list,
+            launcher::launcher_open,
+            launcher::launcher_edit,
         ])
         .setup(move |app| {
-            if launch.edit {
-                editor::open(app.handle())?;
+            match launch.mode {
+                Mode::Apps => {}
+                Mode::Edit => editor::open(app.handle())?,
+                Mode::Launcher => launcher::open(app.handle())?,
             }
             for window in launch.apps {
                 window::open(app.handle(), window)?;

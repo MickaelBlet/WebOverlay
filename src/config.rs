@@ -76,11 +76,19 @@ fn default_height() -> f64 {
 
 /// `config.toml` next to the executable (portable mode) if present, else the user config dir.
 pub fn default_path() -> Result<PathBuf> {
-    if let Some(path) = exe_dir().map(|dir| dir.join("config.toml")) {
-        if path.is_file() {
-            return Ok(path);
-        }
+    match portable_path() {
+        Some(path) if path.is_file() => Ok(path),
+        _ => user_path(),
     }
+}
+
+/// `config.toml` next to the executable (may not exist).
+pub fn portable_path() -> Option<PathBuf> {
+    exe_dir().map(|dir| dir.join("config.toml"))
+}
+
+/// `<config dir>/weboverlay/config.toml` (may not exist).
+pub fn user_path() -> Result<PathBuf> {
     let dir = dirs::config_dir().context("cannot determine the user config directory")?;
     Ok(dir.join("weboverlay").join("config.toml"))
 }
