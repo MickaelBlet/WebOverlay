@@ -1,0 +1,207 @@
+<!doctype html>
+<!-- Header webview: navigation and window controls. State comes from Rust via window.weboverlay.update(). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>WebOverlay header</title>
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --fg: #111827;
+    --muted: #6b7280;
+    --hover: rgba(0, 0, 0, 0.08);
+    --active: rgba(0, 0, 0, 0.14);
+    --border: #d1d5db;
+    --close: #dc2626;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1f2937;
+      --fg: #f3f4f6;
+      --muted: #9ca3af;
+      --hover: rgba(255, 255, 255, 0.1);
+      --active: rgba(255, 255, 255, 0.18);
+      --border: #374151;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 0 0 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .group { display: flex; align-items: center; gap: 2px; flex: none; }
+  button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  button:hover { background: var(--hover); }
+  button:active { background: var(--active); }
+  button:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+  svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #page {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 12px;
+    line-height: 35px;
+    white-space: nowrap;
+  }
+  #favicon, #favicon-default { width: 16px; height: 16px; flex: none; align-self: center; }
+  #favicon { object-fit: contain; }
+  #favicon-default { color: var(--muted); }
+  #favicon[hidden], #favicon-default[hidden] { display: none; }
+  #title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+  #url { color: var(--muted); overflow: hidden; text-overflow: ellipsis; flex: 0 10 auto; min-width: 40px; }
+  #zoom { width: 44px; border-radius: 6px; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border); flex: none; }
+  .win button { width: 44px; height: 35px; border-radius: 0; }
+  .win svg { width: 14px; height: 14px; stroke-width: 1.5; }
+  .win #close:hover { background: var(--close); color: #fff; }
+  #restore-icon { display: none; }
+  body.maximized #maximize-icon { display: none; }
+  body.maximized #restore-icon { display: block; }
+</style>
+</head>
+<body>
+  <div class="group">
+    <button data-action="back" title="Back (Alt+Left)">
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button data-action="forward" title="Forward (Alt+Right)">
+      <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+    <button data-action="reload" title="Reload (F5)">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+    </button>
+    <button data-action="home" title="Home">
+      <svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+    </button>
+  </div>
+
+  <div id="page">
+    <img id="favicon" alt="" hidden>
+    <svg id="favicon-default" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+    <span id="title"></span>
+    <span id="url"></span>
+  </div>
+
+  <div class="group">
+    <button data-action="zoom_out" title="Zoom out">
+      <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+    </button>
+    <button id="zoom" data-action="zoom_reset" title="Reset zoom">100%</button>
+    <button data-action="zoom_in" title="Zoom in">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <span class="sep"></span>
+    <button data-action="external" title="Open in browser">
+      <svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+    </button>
+  </div>
+
+  <div class="group win">
+    <button data-action="minimize" title="Minimize">
+      <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+    </button>
+    <button data-action="toggle_maximize" title="Maximize">
+      <svg id="maximize-icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></svg>
+      <svg id="restore-icon" viewBox="0 0 24 24"><rect x="5" y="8" width="11" height="11"/><path d="M8 8V5h11v11h-3"/></svg>
+    </button>
+    <button id="close" data-action="close" title="Close">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+<script>
+  const invoke = (action) =>
+    window.__TAURI_INTERNALS__.invoke("header_action", { action }).catch((e) => console.error(action, e));
+
+  const $ = (id) => document.getElementById(id);
+
+  const showFavicon = (ok) => {
+    // `hidden` is not an SVGElement property: toggle the attribute.
+    $("favicon").toggleAttribute("hidden", !ok);
+    $("favicon-default").toggleAttribute("hidden", ok);
+  };
+  $("favicon").addEventListener("load", () => showFavicon(true));
+  $("favicon").addEventListener("error", () => showFavicon(false));
+
+  let faviconUrl = null;
+  const setFavicon = (url) => {
+    if (url === faviconUrl) return;
+    faviconUrl = url;
+    if (url) $("favicon").src = url;
+    else {
+      $("favicon").removeAttribute("src");
+      showFavicon(false);
+    }
+  };
+
+  window.weboverlay = {
+    update({ title, url, favicon, zoom, maximized }) {
+      setFavicon(favicon);
+      let shown = url;
+      try {
+        const u = new URL(url);
+        shown = u.host + (u.pathname === "/" ? "" : u.pathname) + u.search;
+      } catch (_) {}
+      $("title").textContent = title;
+      $("url").textContent = shown;
+      $("page").title = title ? `${title}\n${url}` : url;
+      $("zoom").textContent = Math.round(zoom * 100) + "%";
+      document.body.classList.toggle("maximized", maximized);
+      document.querySelector('[data-action="toggle_maximize"]').title = maximized ? "Restore" : "Maximize";
+    },
+  };
+
+  for (const button of document.querySelectorAll("button[data-action]")) {
+    button.addEventListener("click", () => invoke(button.dataset.action));
+  }
+
+  // Empty header area moves the window; double click toggles maximize.
+  document.body.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || e.target.closest("button")) return;
+    if (e.detail === 2) invoke("toggle_maximize");
+    else invoke("start_dragging");
+  });
+
+  window.addEventListener("keydown", (e) => {
+    let action;
+    if (e.altKey && e.key === "ArrowLeft") action = "back";
+    else if (e.altKey && e.key === "ArrowRight") action = "forward";
+    else if (e.key === "F5" || (e.ctrlKey && e.key.toLowerCase() === "r")) action = "reload";
+    if (!action) return;
+    e.preventDefault();
+    invoke(action);
+  });
+</script>
+</body>
+</html>

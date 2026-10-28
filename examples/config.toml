@@ -1,0 +1,16 @@
+# Copy to ~/.config/weboverlay/config.toml (Linux) or %APPDATA%\weboverlay\config.toml (Windows).
+# Script/style paths are relative to this file.
+
+[[app]]
+name = "demo"
+url = "https://example.com/"
+title = "Demo"
+width = 1000
+height = 700
+# user_agent = "Mozilla/5.0 ..."
+allowed_hosts = ["example.com", "*.example.com"]
+styles = [{ path = "demo/style.css" }]
+scripts = [
+  { path = "demo/early.js", run_at = "document-start" },
+  { path = "demo/banner.js", run_at = "document-end", matches = ["https://example.com/*"] },
+]
