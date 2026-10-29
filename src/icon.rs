@@ -92,11 +92,7 @@ pub fn apply_configured(window: &tauri::Window, app: &AppWindow) {
     };
     save_cached(&app_id(&app.config_path, &app.config.name), icon);
     #[cfg(windows)]
-    if let Some(path) = pin_icon_path(app) {
-        if let Err(e) = write_image(&path, icon, 256, image::ImageFormat::Ico) {
-            eprintln!("weboverlay: cannot write {}: {e}", path.display());
-        }
-    }
+    write_pin_icon(app, icon);
     set_window_icon(window, icon.clone());
 }
 
@@ -295,14 +291,18 @@ fn set_taskbar_icon(window: &tauri::Window, icon: &Image<'_>) {
 /// `dev.blet.weboverlay.<config path hash>.<name>`, so apps with the same name in different configs
 /// get their own taskbar button, pin and cached icon.
 fn app_id(config_path: &Path, name: &str) -> String {
-    // Windows paths are case-insensitive. FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
-    let path = config_path.to_string_lossy().to_lowercase();
-    let hash = path.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-    });
+    // Windows paths are case-insensitive.
+    let hash = fnv1a(config_path.to_string_lossy().to_lowercase().as_bytes());
     let mut id = format!("dev.blet.weboverlay.{hash:016x}.{name}");
     id.truncate(128); // AppUserModelID limit (the name is ASCII).
     id
+}
+
+/// FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 /// Command run by a pinned taskbar button.
@@ -317,23 +317,67 @@ fn relaunch_command(exe: &Path, app: &AppWindow) -> String {
     )
 }
 
-/// `<local data dir>/weboverlay/icons/<file>`.
-fn icons_path(file: &str) -> Option<PathBuf> {
-    Some(
-        dirs::data_local_dir()?
-            .join("weboverlay")
-            .join("icons")
-            .join(file),
-    )
+/// `<local data dir>/weboverlay/icons`.
+fn icons_dir() -> Option<PathBuf> {
+    Some(dirs::data_local_dir()?.join("weboverlay").join("icons"))
 }
 
-/// Last favicon of an app as `.ico`: pinned buttons need an icon file.
+/// `<local data dir>/weboverlay/icons/<file>`.
+fn icons_path(file: &str) -> Option<PathBuf> {
+    Some(icons_dir()?.join(file))
+}
+
+/// Last written pin icon of an app (see `write_pin_icon`), if any.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn pin_icon_path(app: &AppWindow) -> Option<PathBuf> {
-    icons_path(&format!(
-        "{}.ico",
-        app_id(&app.config_path, &app.config.name)
-    ))
+    let id = app_id(&app.config_path, &app.config.name);
+    std::fs::read_dir(icons_dir()?)
+        .ok()?
+        .flatten()
+        .filter(|entry| is_pin_icon(&id, &entry.file_name().to_string_lossy()))
+        .max_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok())
+        .map(|entry| entry.path())
+}
+
+/// `<id>.<16 hex digits>.ico` (app names have no `.`, so another app's file never matches).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_pin_icon(id: &str, file: &str) -> bool {
+    file.strip_prefix(id)
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(".ico"))
+        .is_some_and(|hash| hash.len() == 16 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// Writes `icon` as the pin icon of `app` (pinned buttons need an icon file) and returns its path.
+/// The shell caches icons by path, so a pinned shortcut pointing at a file rewritten in place keeps
+/// showing the old icon (see `sync_shortcuts`): the name holds a hash of the content. Older
+/// files are kept (existing pins point at them); the current one is the most recently written.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn write_pin_icon(app: &AppWindow, icon: &Image<'_>) -> Option<PathBuf> {
+    use anyhow::Context;
+
+    let result = encode(icon, 256, image::ImageFormat::Ico).and_then(|ico| {
+        let id = app_id(&app.config_path, &app.config.name);
+        let path = icons_path(&format!("{id}.{:016x}.ico", fnv1a(&ico)))
+            .context("no local data directory")?;
+        if path.is_file() {
+            std::fs::File::options()
+                .write(true)
+                .open(&path)?
+                .set_modified(std::time::SystemTime::now())?;
+        } else {
+            write_atomic(&path, &ico)?;
+        }
+        Ok(path)
+    });
+    result
+        .inspect_err(|e| {
+            eprintln!(
+                "weboverlay: cannot write pin icon of {}: {e:#}",
+                app.config.name
+            )
+        })
+        .ok()
 }
 
 /// Writes `icon` (downscaled to `CACHE_SIZE`) as the launcher icon of app `id` (errors are logged).
@@ -408,11 +452,10 @@ pub fn set_app_id(window: &tauri::Window, app: &AppWindow) {
 
     let id = app_id(&app.config_path, &app.config.name);
     let mut props = vec![(&PKEY_AppUserModel_ID, id.clone())];
+    let pin_icon = pin_icon_path(app);
     // The relaunch properties are only used together (display name required with the command).
     if let Some(exe) = crate::config::exe_path() {
-        let icon = pin_icon_path(app)
-            .filter(|path| path.is_file())
-            .unwrap_or_else(|| exe.clone());
+        let icon = pin_icon.clone().unwrap_or_else(|| exe.clone());
         props.push((
             &PKEY_AppUserModel_RelaunchCommand,
             relaunch_command(&exe, app),
@@ -433,6 +476,91 @@ pub fn set_app_id(window: &tauri::Window, app: &AppWindow) {
     if let Err(e) = set_window_props(window, &props) {
         eprintln!("weboverlay: cannot set taskbar id {id}: {e}");
     }
+    if let Some(icon) = pin_icon {
+        sync_shortcuts(&id, &icon);
+    }
+}
+
+/// Points the taskbar shortcuts of app `id` at `icon`: pinned buttons (`User Pinned\TaskBar`) and
+/// the shortcut Windows keeps after an unpin (`User Pinned\ImplicitAppShortcuts\*`). For windows
+/// with this AppUserModelID the taskbar shows the shortcut icon, not the window one, and Windows
+/// never updates it. Call from the main thread (COM).
+#[cfg(windows)]
+fn sync_shortcuts(id: &str, icon: &Path) {
+    let Some(pinned) = dirs::data_dir()
+        .map(|dir| dir.join(r"Microsoft\Internet Explorer\Quick Launch\User Pinned"))
+    else {
+        return;
+    };
+    let shortcuts = |dir: PathBuf| {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+            })
+    };
+    let implicit = std::fs::read_dir(pinned.join("ImplicitAppShortcuts"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .flat_map(|entry| shortcuts(entry.path()));
+    for link in shortcuts(pinned.join("TaskBar")).chain(implicit) {
+        if let Err(e) = sync_shortcut(&link, id, icon) {
+            eprintln!("weboverlay: cannot update {}: {e}", link.display());
+        }
+    }
+}
+
+/// Sets the icon of shortcut `link` to `icon` if its AppUserModelID is `id`.
+#[cfg(windows)]
+fn sync_shortcut(link: &Path, id: &str, icon: &Path) -> windows::core::Result<()> {
+    use windows::core::{Interface, HSTRING, PCWSTR};
+    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READWRITE,
+    };
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+    use windows::Win32::UI::Shell::{
+        IShellLinkW, SHChangeNotify, ShellLink, SHCNE_UPDATEITEM, SHCNF_PATHW,
+    };
+
+    unsafe {
+        let shell_link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+        let file: IPersistFile = shell_link.cast()?;
+        let link = HSTRING::from(link.as_os_str());
+        file.Load(&link, STGM_READWRITE)?;
+        let store: IPropertyStore = shell_link.cast()?;
+        if store.GetValue(&PKEY_AppUserModel_ID)?.to_string() != id {
+            return Ok(());
+        }
+        let mut current = [0u16; 1024];
+        let mut index = 0;
+        shell_link.GetIconLocation(&mut current, &mut index)?;
+        let len = current
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(current.len());
+        if index == 0
+            && String::from_utf16_lossy(&current[..len])
+                .eq_ignore_ascii_case(&icon.to_string_lossy())
+        {
+            return Ok(());
+        }
+        shell_link.SetIconLocation(&HSTRING::from(icon.as_os_str()), 0)?;
+        file.Save(PCWSTR::null(), true)?;
+        // The taskbar reads the shortcut again only when told it changed.
+        SHChangeNotify(
+            SHCNE_UPDATEITEM,
+            SHCNF_PATHW,
+            Some(link.as_ptr().cast()),
+            None,
+        );
+    }
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -488,13 +616,10 @@ pub fn set_default_taskbar_icon(_window: &tauri::Window) {}
 fn save_pin_icon(window: &tauri::Window, app: &AppWindow, icon: &Image<'_>) {
     use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_RelaunchIconResource;
 
-    let Some(path) = pin_icon_path(app) else {
+    let Some(path) = write_pin_icon(app, icon) else {
         return;
     };
-    if let Err(e) = write_image(&path, icon, 256, image::ImageFormat::Ico) {
-        eprintln!("weboverlay: cannot write {}: {e}", path.display());
-        return;
-    }
+    let id = app_id(&app.config_path, &app.config.name);
     // The property store is COM: use it from the main thread, like `set_app_id`.
     let window = window.clone();
     let _ = window.clone().run_on_main_thread(move || {
@@ -505,6 +630,7 @@ fn save_pin_icon(window: &tauri::Window, app: &AppWindow, icon: &Image<'_>) {
         ) {
             eprintln!("weboverlay: cannot set pin icon: {e}");
         }
+        sync_shortcuts(&id, &path);
     });
 }
 
@@ -516,13 +642,23 @@ fn write_image(
     max: u32,
     format: image::ImageFormat,
 ) -> anyhow::Result<()> {
-    let image = resized(icon, max)?;
+    write_atomic(path, &encode(icon, max, format)?)
+}
+
+/// `icon` downscaled to fit `max` px, encoded as `format`.
+fn encode(icon: &Image<'_>, max: u32, format: image::ImageFormat) -> anyhow::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    resized(icon, max)?.write_to(&mut std::io::Cursor::new(&mut bytes), format)?;
+    Ok(bytes)
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
-    image.save_with_format(&tmp, format)?;
+    std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
 }
@@ -623,6 +759,16 @@ mod tests {
             ),
             r#""C:\Program Files\WebOverlay\weboverlay.exe" --config "C:\My Configs\config.toml" mail"#
         );
+    }
+
+    #[test]
+    fn pin_icon_names() {
+        let id = "dev.blet.weboverlay.0123456789abcdef.mail";
+        assert!(is_pin_icon(id, &format!("{id}.00ff00ff00ff00ff.ico")));
+        assert!(!is_pin_icon(id, &format!("{id}.ico")));
+        assert!(!is_pin_icon(id, &format!("{id}.png")));
+        assert!(!is_pin_icon(id, &format!("{id}.00ff00ff00ff00ff.ico.tmp")));
+        assert!(!is_pin_icon(id, &format!("{id}-x.00ff00ff00ff00ff.ico")));
     }
 
     #[test]

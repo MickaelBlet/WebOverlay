@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Windows: the taskbar button kept an old icon (exe icon, previous favicon or `icon`) for an app that had been pinned once, and a pinned app never picked up a new icon; the pinned shortcuts of the app now follow its current icon.
 - Linux: links to files the webview cannot display (`.zip`, `.exe`, PDF...) did nothing; they are downloaded now, and an empty popup opened only for a download (`target="_blank"` link) closes itself.
 
 ## [0.1.2] - 2026-10-29
