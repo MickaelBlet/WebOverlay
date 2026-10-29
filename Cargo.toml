@@ -1,6 +1,6 @@
 [package]
 name = "weboverlay"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Open any website as a standalone webapp with injected JS/CSS"
 authors = ["Mickaël Blet"]
