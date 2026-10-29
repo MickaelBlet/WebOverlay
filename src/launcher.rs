@@ -35,7 +35,7 @@ const NEW_CONFIG: &str = r##"# WebOverlay config: one [[app]] table per window. 
 # maximized = false                   # width/height still apply when restored
 # zoom = 1.0                          # initial page zoom (0.3 to 3.0), also the header's zoom reset
 # user_agent = "Mozilla/5.0 ..."      # default: WebView user agent
-# icon = "example/icon.png"           # window/taskbar/launcher icon (PNG, ICO, SVG...), default: site favicon
+# icon = "example/icon.png"           # header/window/taskbar/launcher icon (PNG, ICO, SVG...), default: site favicon
 # allowed_hosts = ["example.com", "*.example.com"]   # default: host of `url`; others open in the system browser
 # styles = [
 #   { path = "example/style.css", matches = ["https://example.com/*"] },   # matches: default every page

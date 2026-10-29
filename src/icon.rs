@@ -4,7 +4,8 @@
 //!
 //! The favicon is downloaded from Rust: the page and the header cannot read cross-origin image bytes.
 //! Linux: only X11 window managers use the window icon; Wayland compositors use the `.desktop` file.
-//! An app `icon` from the config replaces the favicon everywhere (window, taskbar, pin, launcher).
+//! An app `icon` from the config replaces the favicon everywhere (header, window, taskbar, pin,
+//! launcher).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -108,7 +109,12 @@ pub fn set_window_icon(window: &tauri::Window, icon: Image<'_>) {
 
 /// Image file `path` as a launcher card icon (`data:image/png` URL, like `cached`).
 pub fn file_data_url(path: &Path) -> Option<String> {
-    let image = resized(&decode(&std::fs::read(path).ok()?)?, CACHE_SIZE).ok()?;
+    data_url(&decode(&std::fs::read(path).ok()?)?)
+}
+
+/// `icon` downscaled to `CACHE_SIZE`, as a `data:image/png` URL (launcher cards, header).
+pub fn data_url(icon: &Image<'_>) -> Option<String> {
+    let image = resized(icon, CACHE_SIZE).ok()?;
     let mut png = Vec::new();
     image
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)

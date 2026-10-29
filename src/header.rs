@@ -40,6 +40,8 @@ struct WindowState {
     title: String,
     url: String,
     favicon: String,
+    /// Configured `icon` (`data:` URL), shown instead of the page favicon.
+    icon: Option<String>,
 }
 
 /// Window label -> state.
@@ -103,6 +105,7 @@ pub fn register(handle: &AppHandle, label: &str, app: Arc<AppWindow>) {
         url: app.config.url.to_string(),
         title: app.config.title.clone().unwrap_or_default(),
         favicon: String::new(),
+        icon: app.icon.as_ref().and_then(icon::data_url),
         zoom: app.config.zoom,
         app,
     };
@@ -192,7 +195,7 @@ pub fn push_state(handle: &AppHandle, label: &str) {
         let header_state = HeaderState {
             title: &state.title,
             url: &state.url,
-            favicon: &state.favicon,
+            favicon: state.icon.as_deref().unwrap_or(&state.favicon),
             zoom: state.zoom,
             maximized,
         };

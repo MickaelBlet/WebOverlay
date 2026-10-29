@@ -78,7 +78,7 @@ const HEADER_ITEMS: &[ValueDoc] = &[
     },
     ValueDoc {
         value: "favicon",
-        doc: "Site favicon.",
+        doc: "Site favicon (or the app `icon`).",
     },
     ValueDoc {
         value: "title",
@@ -213,7 +213,7 @@ pub static SCHEMA: &[KeyDoc] = &[
         "icon",
         "path",
         Some("the site favicon"),
-        "Image file (PNG, ICO, JPEG, GIF, WebP, BMP or SVG) used as window, taskbar and launcher icon instead of the site favicon. Relative to the config file, read at startup.",
+        "Image file (PNG, ICO, JPEG, GIF, WebP, BMP or SVG) used as header, window, taskbar and launcher icon instead of the site favicon. Relative to the config file, read at startup.",
         "\"$0.png\"",
     ),
     key(

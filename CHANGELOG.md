@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `icon` app key: image file (PNG, ICO, JPEG, GIF, WebP, BMP or SVG, relative to the config) used as window, taskbar, Windows pin and launcher icon instead of the site favicon; an unreadable or undecodable file stops the launch with an error.
+- `icon` app key: image file (PNG, ICO, JPEG, GIF, WebP, BMP or SVG, relative to the config) used as header, window, taskbar, Windows pin and launcher icon instead of the site favicon; an unreadable or undecodable file stops the launch with an error.
 - File downloads from the site and its popups: a native "save as" dialog asks where to save the file (pre-filled with the downloads folder and the file name; cancel discards the download). On Linux the dialog opens once the download has finished.
 
 ### Fixed
