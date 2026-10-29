@@ -107,15 +107,15 @@
     font-size: 12px;
   }
   #search:focus, #sort:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  #toolbar { display: flex; justify-content: flex-end; margin: -10px 0 8px; }
+  #toolbar label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
   #sort {
-    flex: 0 1 auto;
-    min-width: 0;
     height: 22px;
     padding: 0 4px;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg);
-    color: inherit;
+    color: var(--fg);
     font: inherit;
     font-size: 12px;
     cursor: pointer;
@@ -303,11 +303,6 @@
       </svg>
       <input id="search" type="search" placeholder="Search apps…" autocomplete="off" spellcheck="false" aria-label="Search apps">
     </label>
-    <select id="sort" title="Sort apps" aria-label="Sort apps">
-      <option value="asc">Name A→Z</option>
-      <option value="desc">Name Z→A</option>
-      <option value="recent">Recently opened</option>
-    </select>
     <button id="configs-btn" aria-haspopup="true" aria-expanded="false" title="Config files">
       Configs <span id="badge" class="badge" hidden></span><span class="chevron">▾</span>
     </button>
@@ -325,7 +320,18 @@
       </button>
     </div>
   </header>
-  <main id="list"><div id="grid"></div><div id="note"></div></main>
+  <main id="list">
+    <div id="toolbar">
+      <label>Sort
+        <select id="sort" title="Sort apps">
+          <option value="asc">Name A→Z</option>
+          <option value="desc">Name Z→A</option>
+          <option value="recent">Recently opened</option>
+        </select>
+      </label>
+    </div>
+    <div id="grid"></div><div id="note"></div>
+  </main>
   <div id="status"><span id="message"></span></div>
   <div id="menu" class="popover" role="menu" hidden></div>
   <div id="configs" class="popover" hidden></div>
@@ -510,7 +516,7 @@
 
   // Empty title bar area moves the window; double click toggles maximize.
   $("bar").addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || e.target.closest("button, select, .search")) return;
+    if (e.button !== 0 || e.target.closest("button, .search")) return;
     windowAction(e.detail === 2 ? "toggle_maximize" : "start_dragging");
   });
 
@@ -642,6 +648,7 @@
     const query = search.value.trim().toLowerCase();
     for (const node of grid.children) node.hidden = !node.haystack.includes(query);
     let note = "";
+    $("toolbar").hidden = !state.items.length;
     if (!state.items.length) note = emptyState();
     else if (!visibleTiles().length) note = el("div", { className: "note", textContent: `No app matches “${search.value.trim()}”.` });
     $("note").replaceChildren(note);

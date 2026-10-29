@@ -92,8 +92,8 @@ Paths are relative to the config file. Files are read at startup: restart the ap
 the recent apps (the last 10 opened, from the launcher or the command line, stored in
 `<local data dir>/weboverlay/recent.json`) and the other apps of the local configs. Each app is listed once;
 recent apps no longer in their config are greyed out. Tiles are sorted by name A→Z by default; the sort menu
-of the top bar switches to Z→A or to recently opened first (recent apps newest first, then the config apps in
-config order), and the choice is remembered. The top bar (search, sort, `Configs`, `New config…`) is the window's
+above the grid switches to Z→A or to recently opened first (recent apps newest first, then the config apps in
+config order), and the choice is remembered. The top bar (search, `Configs`, `New config…`) is the window's
 title bar: drag it to move the window, double click to maximize.
 
 One click starts the app in a new WebOverlay process (`--config <path> <app>`); the launcher stays open.
