@@ -1,6 +1,6 @@
-<p align="center"><img src="icons/128x128.png" alt="WebOverlay icon" width="128" height="128"></p>
-
 # WebOverlay
+
+<p align="center"><img src="icons/128x128.png" alt="WebOverlay icon" width="128" height="128"></p>
 
 Open any website as a standalone desktop webapp (Tauri 2) and inject your own JavaScript and CSS into it.
 
