@@ -106,7 +106,20 @@
     font: inherit;
     font-size: 12px;
   }
-  #search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  #search:focus, #sort:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  #sort {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 22px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
   #configs-btn { display: flex; align-items: center; gap: 6px; }
   .badge {
     min-width: 16px;
@@ -290,6 +303,11 @@
       </svg>
       <input id="search" type="search" placeholder="Search apps…" autocomplete="off" spellcheck="false" aria-label="Search apps">
     </label>
+    <select id="sort" title="Sort apps" aria-label="Sort apps">
+      <option value="asc">Name A→Z</option>
+      <option value="desc">Name Z→A</option>
+      <option value="recent">Recently opened</option>
+    </select>
     <button id="configs-btn" aria-haspopup="true" aria-expanded="false" title="Config files">
       Configs <span id="badge" class="badge" hidden></span><span class="chevron">▾</span>
     </button>
@@ -427,6 +445,22 @@
     return [...items.values()];
   }
 
+  // Grid order: by title (A→Z / Z→A) or the `collect` order ("recent"). The choice is kept per viewer.
+  const sort = $("sort");
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  try {
+    if ([...sort.options].some((o) => o.value === localStorage.getItem("sort"))) sort.value = localStorage.getItem("sort");
+  } catch {}
+
+  function sorted(items) {
+    if (sort.value === "recent") return items;
+    const sign = sort.value === "desc" ? -1 : 1;
+    return [...items].sort(
+      (a, b) =>
+        sign * (collator.compare(a.title, b.title) || collator.compare(a.app, b.app) || collator.compare(a.config, b.config)),
+    );
+  }
+
   // Popovers: one open at a time, closed by outside click, Escape or window blur.
   let popover = null;
   let popoverReturn = null;
@@ -476,7 +510,7 @@
 
   // Empty title bar area moves the window; double click toggles maximize.
   $("bar").addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || e.target.closest("button, .search")) return;
+    if (e.button !== 0 || e.target.closest("button, select, .search")) return;
     windowAction(e.detail === 2 ? "toggle_maximize" : "start_dragging");
   });
 
@@ -615,7 +649,7 @@
 
   function render() {
     const focused = document.activeElement?.dataset?.key;
-    grid.replaceChildren(...state.items.map(cell));
+    grid.replaceChildren(...sorted(state.items).map(cell));
     applyFilter();
     if (focused) visibleTiles().find((t) => t.dataset.key === focused)?.focus();
     const errors = state.configs.filter((c) => c.error).length;
@@ -662,6 +696,12 @@
   }
 
   search.addEventListener("input", applyFilter);
+  sort.addEventListener("change", () => {
+    try {
+      localStorage.setItem("sort", sort.value);
+    } catch {}
+    render();
+  });
   search.addEventListener("keydown", (e) => {
     if (popover) return;
     const tiles = visibleTiles();
@@ -697,7 +737,7 @@
     if (tile && e.key.startsWith("Arrow")) {
       e.preventDefault();
       gridNav(tile, e.key);
-    } else if (e.target !== search && e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    } else if (e.target !== search && e.target !== sort && e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
       // Type to search: the key lands in the field once it has the focus.
       search.focus();
     }
