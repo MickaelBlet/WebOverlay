@@ -111,10 +111,27 @@ Tiles show the app favicon: the last one seen by the app (cached as
 The pencil button in the header (or `weboverlay --edit`, which opens only the editor and works with a
 missing or invalid config) edits `config.toml` and the script/style files it references:
 
-- TOML/JS/CSS highlighting, line numbers, Tab / Shift+Tab indent, Ctrl+S save.
+- TOML/JS/CSS highlighting, line numbers, current line and matching bracket highlight.
+- VSCode shortcuts (below), auto-closed brackets and quotes, smart indentation.
 - `config.toml` is validated before saving: an invalid config is refused with the error shown.
 - Files referenced by the config but missing are marked `new` and created on save.
 - Restart relaunches WebOverlay (without `--edit`) to apply the changes.
+
+| Keys | Action |
+| ---- | ------ |
+| `Ctrl+S` | Save |
+| `Ctrl+/` · `Shift+Alt+A` | Toggle line comment (CSS: block) · block comment |
+| `Alt+↑/↓` · `Shift+Alt+↑/↓` | Move · copy line(s) |
+| `Ctrl+Shift+K` | Delete line(s) |
+| `Ctrl+Enter` · `Ctrl+Shift+Enter` | Insert line below · above |
+| `Ctrl+L` · `Ctrl+D` | Select line (repeat to extend) · select word, then its next occurrence |
+| `Tab` / `Shift+Tab` · `Ctrl+]` / `Ctrl+[` | Indent / outdent |
+| `Home` | First non-blank char, then line start |
+| `Ctrl+C` / `Ctrl+X` without selection | Copy / cut the line |
+| `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous file (most recently used first) |
+
+Punctuation shortcuts follow the physical US key on other layouts (AZERTY: `Ctrl+$` = `Ctrl+]`, like VSCode).
 
 Each script runs inside its own function wrapped in `try/catch`; errors are logged to the devtools console
 (right click → Inspect in debug builds).

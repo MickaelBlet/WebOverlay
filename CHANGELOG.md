@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Launcher shows each app's favicon (the last one seen by the app, else the site's `/favicon.ico`), cached in `<local data dir>/weboverlay/icons/`.
 - `zoom` app key: initial page zoom (0.3 to 3.0), also used by the header's zoom reset.
 - `[app.header]` config table: header background `color`, `text_color` (default follows the background) and `hide` to remove header items (`back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom`, `edit`, `external`).
+- Editor: VSCode shortcuts (comment toggle, move/copy/delete line, insert line, select line/next occurrence, indent, smart Home, whole-line copy/cut, redo, Ctrl+Tab file switch), auto-closed brackets and quotes, indentation after an opening bracket, current line and matching bracket highlight.
 - Launcher: search field (type anywhere to search, `Enter` opens the first match), arrow-key navigation, per-app menu (`⋯` or right click: open, edit config, remove from recent).
 
 ### Changed

@@ -25,6 +25,7 @@
     --sec: #be185d;
     --fn: #0e7490;
     --bool: #c2410c;
+    --curline: rgba(0, 0, 0, 0.035);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -48,6 +49,7 @@
       --sec: #f9a8d4;
       --fn: #67e8f9;
       --bool: #fda4af;
+      --curline: rgba(255, 255, 255, 0.04);
       color-scheme: dark;
     }
   }
@@ -150,6 +152,13 @@
     overflow: hidden;
   }
   #hl { pointer-events: none; color: var(--fg); }
+  #curline { position: absolute; left: 0; right: 0; height: 20px; background: var(--curline); pointer-events: none; }
+  #deco { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  #deco-in { position: absolute; left: 0; top: 0; }
+  #deco-in > div { position: absolute; height: 20px; }
+  .bracket { outline: 1px solid var(--muted); outline-offset: -1px; background: var(--hover); }
+  #gutter .cur { color: var(--fg); }
+  #gutter .err { color: var(--error); font-weight: 700; }
   /* The UA stylesheet sets `code { font-family: monospace }`, which would differ from the textarea font. */
   #hl code { font: inherit; }
   #text {
@@ -200,6 +209,8 @@
     <div id="code">
       <pre id="gutter">1</pre>
       <div id="wrap">
+        <div id="curline" hidden></div>
+        <div id="deco" aria-hidden="true"><div id="deco-in"></div></div>
         <pre id="hl" aria-hidden="true"><code id="hl-code"></code></pre>
         <textarea id="text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
       </div>
@@ -211,350 +222,6 @@
     </div>
   </div>
 
-<script>
-  const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
-  const $ = (id) => document.getElementById(id);
-  const text = $("text");
-
-  // ---- Highlighting: sticky regex rules tried in order at each position. ----
-
-  const STRING = [/"(?:[^"\\\n]|\\.)*"?/y, "str"];
-  const SQ_STRING = [/'(?:[^'\\\n]|\\.)*'?/y, "str"];
-  const BLOCK_COMMENT = [/\/\*[\s\S]*?(?:\*\/|$)/y, "com"];
-  const LANGS = {
-    toml: [
-      [/#.*/y, "com"],
-      [/"""[\s\S]*?(?:"""|$)/y, "str"],
-      [/'''[\s\S]*?(?:'''|$)/y, "str"],
-      STRING,
-      [/'[^'\n]*'?/y, "str"],
-      [/^[ \t]*\[\[?[^\[\]\n]*\]\]?(?=[ \t]*(?:#|$))/my, "sec"],
-      [/[A-Za-z0-9_.-]+(?=[ \t]*=)/y, "key"],
-      [/\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?/y, "num"],
-      [/[+-]?(?:0x[\da-fA-F_]+|0o[0-7_]+|0b[01_]+|inf\b|nan\b|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?)/y, "num"],
-      [/(?:true|false)\b/y, "bool"],
-      [/[A-Za-z_][\w-]*/y, null],
-    ],
-    js: [
-      [/\/\/.*/y, "com"],
-      BLOCK_COMMENT,
-      [/`(?:[^`\\]|\\[\s\S])*`?/y, "str"],
-      STRING,
-      SQ_STRING,
-      [/(?:async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|of|return|static|super|switch|this|throw|try|typeof|var|void|while|with|yield)\b/y, "kw"],
-      [/(?:true|false|null|undefined|NaN|Infinity)\b/y, "bool"],
-      [/(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.\d*)?(?:[eE][+-]?\d+)?n?|\.\d+(?:[eE][+-]?\d+)?)/y, "num"],
-      [/[A-Za-z_$][\w$]*(?=\s*\()/y, "fn"],
-      [/[A-Za-z_$][\w$]*/y, null],
-    ],
-    css: [
-      BLOCK_COMMENT,
-      STRING,
-      SQ_STRING,
-      [/@[\w-]+/y, "kw"],
-      [/!\s*important\b/y, "kw"],
-      [/(?<=[{;]\s*)-*[A-Za-z][\w-]*(?=\s*:)/y, "key"],
-      [/#[\da-fA-F]{3,8}\b/y, "num"],
-      [/-?(?:\d+\.?\d*|\.\d+)(?:%|[A-Za-z]+)?/y, "num"],
-      [/[.#][A-Za-z_-][\w-]*/y, "fn"],
-      [/[A-Za-z_-][\w-]*/y, null],
-    ],
-  };
-  const LANG_NAMES = { toml: "TOML", js: "JavaScript", css: "CSS" };
-
-  const escapeHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  function highlight(src, lang) {
-    const rules = LANGS[lang];
-    if (!rules) return escapeHtml(src);
-    let out = "";
-    let plain = "";
-    let pos = 0;
-    outer: while (pos < src.length) {
-      for (const [re, cls] of rules) {
-        re.lastIndex = pos;
-        const m = re.exec(src);
-        if (!m || m[0].length === 0) continue;
-        if (cls) {
-          out += escapeHtml(plain) + `<span class="${cls}">${escapeHtml(m[0])}</span>`;
-          plain = "";
-        } else {
-          plain += m[0];
-        }
-        pos += m[0].length;
-        continue outer;
-      }
-      plain += src[pos++];
-    }
-    return out + escapeHtml(plain);
-  }
-
-  const langOf = (path) => {
-    const ext = (path.match(/\.([^.\\/]+)$/) || [])[1];
-    return { toml: "toml", js: "js", mjs: "js", cjs: "js", css: "css" }[(ext || "").toLowerCase()] || null;
-  };
-
-  // ---- State ----
-
-  let files = [];
-  let configDir = "";
-  const buffers = new Map(); // path -> { content, saved, exists, selStart, selEnd, scrollTop, scrollLeft }
-  let current = null;
-  let restartArmed = false;
-
-  const isDirty = (path) => {
-    const b = buffers.get(path);
-    return !!b && b.content !== b.saved;
-  };
-  const fileOf = (path) => files.find((f) => f.path === path);
-
-  function setMessage(msg, kind = "") {
-    $("message").textContent = msg;
-    $("message").className = kind;
-    $("message").title = msg;
-  }
-
-  const relative = (path) =>
-    configDir && path.startsWith(configDir) ? path.slice(configDir.length).replace(/^[\\/]+/, "") : path;
-  const baseName = (path) => path.split(/[\\/]/).pop();
-
-  function renderSidebar() {
-    const nav = $("sidebar");
-    nav.textContent = "";
-    let group = null;
-    for (const file of files) {
-      const title = file.kind === "config" ? "Config" : file.app;
-      if (title !== group) {
-        group = title;
-        const h = document.createElement("div");
-        h.className = "group-title";
-        h.textContent = title;
-        nav.append(h);
-      }
-      const item = document.createElement("div");
-      item.className = "file";
-      item.classList.toggle("current", file.path === current);
-      item.classList.toggle("dirty", isDirty(file.path));
-      item.title = file.path;
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = file.kind === "config" ? baseName(file.path) : relative(file.path);
-      item.append(name);
-      const buffer = buffers.get(file.path);
-      if (!(buffer ? buffer.exists : file.exists)) {
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        badge.textContent = "new";
-        item.append(badge);
-      }
-      const dot = document.createElement("span");
-      dot.className = "dot";
-      item.append(dot);
-      item.addEventListener("click", () => openFile(file.path));
-      nav.append(item);
-    }
-  }
-
-  let renderQueued = false;
-  function renderCode() {
-    renderQueued = false;
-    const src = text.value;
-    // A trailing newline would otherwise collapse the last (empty) line of the overlay.
-    $("hl-code").innerHTML = highlight(src, current && langOf(current)) + "\n ";
-    const lines = src.split("\n").length;
-    if ($("gutter").dataset.lines !== String(lines)) {
-      $("gutter").dataset.lines = lines;
-      $("gutter").textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
-    }
-    syncScroll();
-  }
-  const queueRender = () => {
-    if (!renderQueued) {
-      renderQueued = true;
-      requestAnimationFrame(renderCode);
-    }
-  };
-
-  function syncScroll() {
-    $("hl").scrollTop = text.scrollTop;
-    $("hl").scrollLeft = text.scrollLeft;
-    $("gutter").scrollTop = text.scrollTop;
-  }
-
-  function updatePos() {
-    const before = text.value.slice(0, text.selectionStart);
-    const line = before.split("\n").length;
-    const col = before.length - before.lastIndexOf("\n");
-    $("pos").textContent = current ? `Ln ${line}, Col ${col}` : "";
-  }
-
-  function updateChrome() {
-    const dirty = current && isDirty(current);
-    $("save").disabled = !dirty;
-    $("path").textContent = current ? "‎" + current : "";
-    $("lang").textContent = current ? LANG_NAMES[langOf(current)] || "Plain text" : "";
-    document.title = (dirty ? "• " : "") + (current ? baseName(current) + " — " : "") + "WebOverlay editor";
-    for (const item of $("sidebar").querySelectorAll(".file")) {
-      item.classList.toggle("current", item.title === current);
-      item.classList.toggle("dirty", isDirty(item.title));
-    }
-  }
-
-  function storeView() {
-    const b = current && buffers.get(current);
-    if (!b) return;
-    Object.assign(b, {
-      selStart: text.selectionStart,
-      selEnd: text.selectionEnd,
-      scrollTop: text.scrollTop,
-      scrollLeft: text.scrollLeft,
-    });
-  }
-
-  async function openFile(path) {
-    if (path === current) return;
-    storeView();
-    if (!buffers.has(path)) {
-      try {
-        const { content, exists } = await invoke("editor_read", { path });
-        buffers.set(path, { content, saved: content, exists, selStart: 0, selEnd: 0, scrollTop: 0, scrollLeft: 0 });
-      } catch (e) {
-        setMessage(String(e), "error");
-        return;
-      }
-    }
-    current = path;
-    const b = buffers.get(path);
-    text.disabled = false;
-    text.value = b.content;
-    text.setSelectionRange(b.selStart, b.selEnd);
-    renderCode();
-    text.scrollTop = b.scrollTop;
-    text.scrollLeft = b.scrollLeft;
-    syncScroll();
-    text.focus();
-    updateChrome();
-    updatePos();
-    if (!b.exists) setMessage("New file: it is created on save.", "warn");
-  }
-
-  async function refreshFiles() {
-    const list = await invoke("editor_files");
-    files = list.files;
-    const config = files.find((f) => f.kind === "config");
-    configDir = config ? config.path.replace(/[\\/][^\\/]*$/, "") : "";
-    renderSidebar();
-    if (list.error) setMessage("Saved config is invalid: " + list.error, "error");
-    return list;
-  }
-
-  async function save() {
-    if (!current || !isDirty(current)) return;
-    const path = current;
-    const b = buffers.get(path);
-    const content = b.content;
-    try {
-      await invoke("editor_write", { path, content });
-    } catch (e) {
-      setMessage(String(e), "error");
-      return;
-    }
-    b.saved = content;
-    b.exists = true;
-    setMessage("Saved " + baseName(path) + ". Restart to apply.", "ok");
-    if (fileOf(path) && fileOf(path).kind === "config") {
-      await refreshFiles().catch((e) => setMessage(String(e), "error"));
-    } else {
-      renderSidebar();
-    }
-    updateChrome();
-  }
-
-  async function restart() {
-    const dirty = [...buffers.keys()].filter(isDirty);
-    if (dirty.length && !restartArmed) {
-      restartArmed = true;
-      setMessage(`Unsaved changes in ${dirty.map(baseName).join(", ")}: click Restart again to discard them.`, "warn");
-      return;
-    }
-    restartArmed = false;
-    try {
-      await invoke("editor_restart");
-    } catch (e) {
-      setMessage(String(e), "error");
-    }
-  }
-
-  // ---- Editing helpers (insertText keeps the native undo stack). ----
-
-  const insert = (s) => document.execCommand("insertText", false, s);
-
-  function indent(outdent) {
-    const v = text.value;
-    const { selectionStart: start, selectionEnd: end } = text;
-    if (!outdent && start === end) {
-      insert("  ");
-      return;
-    }
-    const lineStart = v.lastIndexOf("\n", start - 1) + 1;
-    // A selection ending at the start of a line doesn't include that line.
-    const lineEnd = end > start && v[end - 1] === "\n" ? end - 1 : end;
-    const block = v.slice(lineStart, lineEnd);
-    const lines = block.split("\n");
-    const changed = lines.map((l) => (outdent ? l.replace(/^(?: {1,2}|\t)/, "") : l.length ? "  " + l : l));
-    const replaced = changed.join("\n");
-    if (replaced === block) return;
-    text.setSelectionRange(lineStart, lineEnd);
-    insert(replaced);
-    const firstDelta = changed[0].length - lines[0].length;
-    text.setSelectionRange(
-      Math.max(lineStart, start + firstDelta),
-      lineStart + replaced.length + (lineEnd < end ? end - lineEnd : 0),
-    );
-  }
-
-  function newline() {
-    const v = text.value;
-    const lineStart = v.lastIndexOf("\n", text.selectionStart - 1) + 1;
-    const ws = v.slice(lineStart).match(/^[ \t]*/)[0];
-    insert("\n" + ws.slice(0, Math.max(0, text.selectionStart - lineStart)));
-  }
-
-  text.addEventListener("keydown", (e) => {
-    if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      e.preventDefault();
-      indent(e.shiftKey);
-    } else if (e.key === "Enter" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
-      e.preventDefault();
-      newline();
-    }
-  });
-
-  text.addEventListener("input", () => {
-    const b = current && buffers.get(current);
-    if (!b) return;
-    const wasDirty = b.content !== b.saved;
-    b.content = text.value;
-    restartArmed = false;
-    if (wasDirty !== isDirty(current)) updateChrome();
-    queueRender();
-    updatePos();
-  });
-  text.addEventListener("scroll", syncScroll);
-  for (const ev of ["keyup", "mouseup", "focus"]) text.addEventListener(ev, updatePos);
-
-  window.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
-      e.preventDefault();
-      save();
-    }
-  });
-  $("save").addEventListener("click", save);
-  $("restart").addEventListener("click", restart);
-
-  refreshFiles()
-    .then(() => files.length && openFile(files[0].path))
-    .catch((e) => setMessage(String(e), "error"));
-</script>
+<script type="module" src="editor/main.js"></script>
 </body>
 </html>
