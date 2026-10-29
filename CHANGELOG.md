@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.1] - 2026-10-29
 
 ### Added
 
@@ -51,5 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker release builds (`scripts/build.sh [--fast] [linux|windows]...`): Linux `.deb`/`.rpm`/`.AppImage`, Windows NSIS setup and portable exe; one platform at a time, `--fast` for quicker thin-LTO rebuilds.
 - `scripts/check.sh`: `cargo fmt --check`, clippy (Linux and Windows) and tests in Docker; no host toolchain or WSL needed.
 
-[Unreleased]: https://github.com/MickaelBlet/WebOverlay/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MickaelBlet/WebOverlay/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/MickaelBlet/WebOverlay/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MickaelBlet/WebOverlay/releases/tag/v0.1.0
