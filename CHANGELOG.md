@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[app.header]` config table: header background `color`, `text_color` (default follows the background) and `hide` to remove header items (`back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom`, `edit`, `external`).
 - Editor: VSCode shortcuts (comment toggle, move/copy/delete line, insert line, select line/next occurrence, indent, smart Home, whole-line copy/cut, redo, Ctrl+Tab file switch), auto-closed brackets and quotes, indentation after an opening bracket, current line and matching bracket highlight.
 - Editor: completion with documentation (config keys, values and headers from the config schema; JS keywords, file words and DOM members; CSS properties and values), hover documentation of config keys and values, and live validation of `config.toml` (error underlined, shown in the status bar).
+- Editor: find / replace widget (match case, whole word, regex, replace all in one undo step), quick open (`Ctrl+P`), command palette (`Ctrl+Shift+P`, `F1`) and go to line (`Ctrl+G`).
 - Launcher: search field (type anywhere to search, `Enter` opens the first match), arrow-key navigation, per-app menu (`⋯` or right click: open, edit config, remove from recent).
 
 ### Changed

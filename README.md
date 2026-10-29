@@ -118,6 +118,7 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
   `[app.header]` headers; JS: keywords, words of the file and DOM members (`document.`, `window.`…);
   CSS: properties, values and `var(--x)`.
 - Hover a config key, value or header for its documentation (`Ctrl+K Ctrl+I` at the caret).
+- Find / replace (match case, whole word, regex with `$1` groups), quick open of the files, command palette, go to line.
 - `config.toml` is checked while typing: the error is underlined, its line number turns red and the
   status bar shows it (click to jump there).
 - `config.toml` is validated before saving: an invalid config is refused with the error shown.
@@ -137,6 +138,9 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
 | `Ctrl+C` / `Ctrl+X` without selection | Copy / cut the line |
 | `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo |
 | `Ctrl+Space` · `Ctrl+K Ctrl+I` | Suggestions · documentation at the caret |
+| `Ctrl+F` · `Ctrl+H` | Find · replace (`Enter` / `Shift+Enter`: next / previous, `Ctrl+Alt+Enter`: replace all, `Alt+C` / `Alt+W` / `Alt+R`: case / whole word / regex) |
+| `F3` / `Shift+F3` | Next / previous match |
+| `Ctrl+P` · `Ctrl+Shift+P` / `F1` · `Ctrl+G` | Quick open file · command palette · go to line (`:line[:column]`) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous file (most recently used first) |
 
 Punctuation shortcuts follow the physical US key on other layouts (AZERTY: `Ctrl+$` = `Ctrl+]`, like VSCode).

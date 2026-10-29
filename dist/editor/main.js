@@ -1,7 +1,7 @@
 // Editor entry point: files, buffers, save/restart and the wiring of the other modules.
 
 import {
-  $, text, invoke, state, langOf, currentLang, LANG_NAMES, fileOf, relative, baseName, setMessage, emit,
+  $, text, invoke, state, langOf, currentLang, LANG_NAMES, fileOf, relative, baseName, setMessage, on, emit,
 } from "./core.js";
 import { highlight } from "./highlight.js";
 import * as view from "./view.js";
@@ -9,6 +9,8 @@ import * as edit from "./edit.js";
 import { register, handleKey } from "./keymap.js";
 import "./complete.js";
 import "./check.js";
+import "./find.js";
+import "./palette.js";
 
 let restartArmed = false;
 /** Paths, most recently used first (Ctrl+Tab). */
@@ -270,13 +272,14 @@ document.addEventListener("selectionchange", () => {
 for (const ev of ["copy", "cut", "paste"]) text.addEventListener(ev, edit.clipboard);
 new ResizeObserver(() => view.scrolled()).observe(text);
 
+on("openFile", openFile);
 $("save").addEventListener("click", save);
 $("restart").addEventListener("click", restart);
 
 document.fonts.ready.then(view.measure);
 view.measure();
 invoke("editor_schema")
-  .then((schema) => (state.schema = schema))
+  .then((schema) => (state.schema = schema || []))
   .catch((e) => setMessage(String(e), "error"));
 refreshFiles()
   .then(() => state.files.length && openFile(state.files[0].path))

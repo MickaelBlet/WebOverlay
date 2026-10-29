@@ -27,6 +27,8 @@
     --bool: #c2410c;
     --curline: rgba(0, 0, 0, 0.035);
     --widget: #ffffff;
+    --match: rgba(234, 179, 8, 0.28);
+    --match-cur: rgba(234, 179, 8, 0.55);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -52,6 +54,8 @@
       --bool: #fda4af;
       --curline: rgba(255, 255, 255, 0.04);
       --widget: #1f2937;
+      --match: rgba(234, 179, 8, 0.22);
+      --match-cur: rgba(234, 179, 8, 0.45);
       color-scheme: dark;
     }
   }
@@ -247,6 +251,35 @@
   .d-meta { color: var(--muted); margin-top: 4px; }
   .d-values { margin: 6px 0 0; padding-left: 16px; }
   .d-error { color: var(--error); margin-bottom: 4px; }
+  .match { background: var(--match); }
+  .match-cur { background: var(--match-cur); outline: 1px solid var(--dirty); }
+
+  #find { top: 0; right: 18px; display: flex; gap: 4px; padding: 4px 6px 4px 2px; border-top: 0; border-radius: 0 0 6px 6px; }
+  #find[hidden], #palette[hidden] { display: none; }
+  #find .rows { display: flex; flex-direction: column; gap: 4px; }
+  #find .row { display: flex; align-items: center; gap: 2px; }
+  #find .row[hidden] { display: none; }
+  #find .field { position: relative; display: flex; align-items: center; width: 260px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); }
+  #find .field:focus-within { border-color: var(--accent); }
+  #find input { flex: 1; min-width: 0; height: 24px; padding: 0 6px; border: 0; outline: none; background: transparent; color: inherit; font: inherit; }
+  #find input.invalid { color: var(--error); }
+  .icon-btn, .opt { height: 22px; min-width: 22px; padding: 0 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; font: 12px system-ui, sans-serif; }
+  .opt { color: var(--muted); }
+  .opt.on { color: var(--accent); border-color: var(--accent); background: var(--active); }
+  #find-mode { align-self: stretch; height: auto; transition: transform 0.1s; }
+  #find.replace #find-mode { transform: rotate(90deg); }
+  #find-count { min-width: 64px; padding: 0 6px; color: var(--muted); white-space: nowrap; font-size: 12px; }
+  #find-count.none { color: var(--error); }
+
+  #palette { position: fixed; top: 6px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); padding: 6px; }
+  #palette-input { width: 100%; height: 28px; padding: 0 8px; border: 1px solid var(--accent); border-radius: 4px; outline: none; background: var(--bg); color: inherit; font: inherit; }
+  #palette-list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 330px; overflow-y: auto; }
+  #palette-list li { display: flex; gap: 12px; padding: 0 8px; line-height: 26px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  #palette-list li.sel { background: var(--active); }
+  #palette-list li.info { cursor: default; color: var(--muted); }
+  #palette-list .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #palette-list .label b { color: var(--accent); }
+  #palette-list .detail { color: var(--muted); font-size: 12px; }
   .d-error + .d-title { border-top: 1px solid var(--border); padding-top: 6px; }
 </style>
 </head>
@@ -267,6 +300,28 @@
         <textarea id="text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
         <div id="suggest" class="widget" hidden><ul id="suggest-list"></ul><div id="suggest-doc" class="doc"></div></div>
         <div id="hover" class="widget doc" hidden></div>
+        <div id="find" class="widget" hidden>
+          <button id="find-mode" class="icon-btn" title="Toggle Replace (Ctrl+H)">›</button>
+          <div class="rows">
+            <div class="row">
+              <span class="field">
+                <input id="find-input" placeholder="Find" spellcheck="false" autocomplete="off">
+                <button id="opt-case" class="opt" title="Match Case (Alt+C)">Aa</button>
+                <button id="opt-word" class="opt" title="Match Whole Word (Alt+W)"><u>ab</u></button>
+                <button id="opt-regex" class="opt" title="Use Regular Expression (Alt+R)">.*</button>
+              </span>
+              <span id="find-count"></span>
+              <button id="find-prev" class="icon-btn" title="Previous Match (Shift+Enter, Shift+F3)">↑</button>
+              <button id="find-next" class="icon-btn" title="Next Match (Enter, F3)">↓</button>
+              <button id="find-close" class="icon-btn" title="Close (Escape)">×</button>
+            </div>
+            <div id="replace-row" class="row" hidden>
+              <span class="field"><input id="replace-input" placeholder="Replace" spellcheck="false" autocomplete="off"></span>
+              <button id="replace-one" class="icon-btn" title="Replace (Enter)">⇥</button>
+              <button id="replace-all" class="icon-btn" title="Replace All (Ctrl+Alt+Enter)">⇶</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div id="status">
@@ -275,6 +330,11 @@
       <span id="lang"></span>
       <span id="pos"></span>
     </div>
+  </div>
+
+  <div id="palette" class="widget" hidden>
+    <input id="palette-input" spellcheck="false" autocomplete="off" placeholder="Search files by name (> commands, : line)">
+    <ul id="palette-list"></ul>
   </div>
 
 <script type="module" src="editor/main.js"></script>
