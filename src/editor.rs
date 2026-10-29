@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager, State, Webview, WebviewUrl, WebviewWindowBuilder
 
 use crate::config::{self, Config};
 use crate::icon;
+use crate::window::{show_when_loaded, theme_color, PAGE_BG};
 
 /// Contains `:`, so it can't clash with an app window label (`[A-Za-z0-9_-]+`).
 pub const EDITOR_LABEL: &str = "weboverlay:editor";
@@ -64,7 +65,10 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
         WebviewWindowBuilder::new(handle, EDITOR_LABEL, WebviewUrl::App("editor.html".into()))
             .title(format!("WebOverlay — {}", config_path.display()))
             .inner_size(1000.0, 700.0)
+            .visible(false)
+            .on_page_load(show_when_loaded)
             .build()?;
+    let _ = window.set_background_color(Some(theme_color(&window.as_ref().window(), PAGE_BG)));
     icon::set_default_taskbar_icon(&window.as_ref().window());
     Ok(())
 }

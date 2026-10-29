@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- Launcher: recent apps and the apps of the local configs. Data and actions come from Rust (launcher_* commands). -->
+<!-- Launcher: one grid of the recent apps and the apps of the local configs, configs in a header menu.
+     Data and actions come from Rust (launcher_* commands). -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -13,8 +14,10 @@
     --hover: rgba(0, 0, 0, 0.06);
     --border: #d1d5db;
     --accent: #2563eb;
+    --accent-fg: #ffffff;
     --error: #dc2626;
     --ok: #059669;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -23,15 +26,18 @@
       --panel: #1f2937;
       --fg: #f3f4f6;
       --muted: #9ca3af;
-      --hover: rgba(255, 255, 255, 0.06);
+      --hover: rgba(255, 255, 255, 0.07);
       --border: #374151;
       --accent: #60a5fa;
+      --accent-fg: #0b1220;
       --error: #f87171;
       --ok: #34d399;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
       color-scheme: dark;
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body {
     margin: 0;
     height: 100%;
@@ -41,81 +47,215 @@
   }
   body { display: flex; flex-direction: column; }
   button {
-    height: 26px;
+    height: 28px;
     padding: 0 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg);
     color: inherit;
     font: inherit;
+    cursor: pointer;
   }
   button:hover:not(:disabled) { background: var(--hover); }
-  button:disabled { opacity: 0.5; }
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 500; }
+  button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
 
-  #list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 20px 20px; }
-  section { margin-top: 14px; }
-  .head {
+  /* Title bar (undecorated window): empty areas move the window. */
+  #bar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-height: 30px;
+    gap: 6px;
+    height: 30px;
+    padding: 0 0 0 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
   }
-  .title {
+  #bar button { height: 22px; padding: 0 10px; font-size: 12px; }
+  .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; margin-right: 6px; }
+  .brand svg { width: 16px; height: 16px; color: var(--accent); }
+  .search { position: relative; flex: 1; max-width: 320px; }
+  .search svg {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+  }
+  #search {
+    width: 100%;
+    height: 22px;
+    padding: 0 8px 0 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+  }
+  #search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .spacer { flex: 1; }
+  #configs-btn { display: flex; align-items: center; gap: 6px; }
+  .badge {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--error);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+  }
+  .chevron { color: var(--muted); font-size: 10px; }
+  .win { display: flex; flex: none; margin-left: 4px; }
+  #bar .win button {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 29px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  #bar .win button:hover { background: var(--hover); }
+  #bar .win #close:hover { background: #dc2626; color: #fff; }
+  .win svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  #restore-icon { display: none; }
+  #bar.maximized #maximize-icon { display: none; }
+  #bar.maximized #restore-icon { display: block; }
+
+  /* App grid */
+  #list { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 16px; }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 6px;
+  }
+  .cell { position: relative; }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: auto;
+    padding: 14px 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+  }
+  .tile:hover:not(:disabled) { background: var(--hover); }
+  .tile.gone { opacity: 0.45; }
+  .tile.gone .avatar { filter: grayscale(1); }
+  .avatar {
+    width: 48px;
+    height: 48px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 21px;
+  }
+  img.avatar { object-fit: contain; }
+  .name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    max-width: 100%;
+    font-size: 12px;
+    line-height: 1.3;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  .more {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0;
+  }
+  .cell:hover .more, .cell:focus-within .more { opacity: 1; }
+  .more:hover { color: var(--fg); }
+
+  .note { color: var(--muted); padding: 6px 0; }
+  .note.error { color: var(--error); white-space: pre-wrap; }
+  .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 70px; text-align: center; }
+  .empty-title { font-size: 16px; font-weight: 600; }
+  .empty p { margin: 0 0 10px; color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* Popovers: per-app menu and configs */
+  .popover {
+    position: fixed;
+    z-index: 10;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: var(--shadow);
+  }
+  #menu { min-width: 190px; max-width: 320px; padding: 4px; }
+  #menu button {
+    display: block;
+    width: 100%;
+    height: 30px;
+    padding: 0 10px;
+    border: none;
+    text-align: left;
+    background: transparent;
+  }
+  #menu button:hover, #menu button:focus { background: var(--hover); outline: none; }
+  #menu button.danger { color: var(--error); }
+  .menu-head { padding: 6px 10px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .menu-head div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu-head .sub { color: var(--muted); font-size: 12px; direction: rtl; text-align: left; }
+
+  #configs { width: min(460px, calc(100vw - 16px)); max-height: 70vh; overflow-y: auto; padding: 6px; }
+  .cfg { padding: 10px; border-radius: 8px; }
+  .cfg + .cfg { border-top: 1px solid var(--border); border-top-left-radius: 0; border-top-right-radius: 0; }
+  .cfg-head { display: flex; align-items: baseline; gap: 8px; }
+  .kind {
+    flex: none;
     color: var(--muted);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    flex: none;
   }
+  .state { flex: none; margin-left: auto; color: var(--muted); font-size: 12px; }
+  .state.error { color: var(--error); }
   .path {
-    flex: 1;
-    min-width: 0;
+    margin: 4px 0 8px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--muted);
     direction: rtl;
     text-align: left;
+    font-size: 12px;
   }
-  .note { color: var(--muted); padding: 6px 0; }
-  .note.error { color: var(--error); white-space: pre-wrap; }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-    gap: 8px;
-    margin-top: 6px;
-  }
-  .card {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    height: auto;
-    padding: 10px;
-    text-align: left;
-    background: var(--panel);
-    border-color: transparent;
-    cursor: pointer;
-  }
-  .card:hover:not(:disabled) { border-color: var(--border); background: var(--panel); filter: brightness(0.98); }
-  .card:disabled { cursor: default; }
-  .avatar {
-    width: 32px;
-    height: 32px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    border-radius: 8px;
-    color: #fff;
-    font-weight: 600;
-    font-size: 15px;
-  }
-  img.avatar { object-fit: contain; }
-  .text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { color: var(--muted); font-size: 12px; }
+  .cfg .note.error { padding: 0 0 8px; font-size: 12px; }
+  .cfg .actions button { height: 24px; padding: 0 10px; font-size: 12px; }
 
   #status {
     display: flex;
@@ -125,24 +265,72 @@
     border-top: 1px solid var(--border);
     background: var(--panel);
     font-size: 12px;
+    flex: none;
   }
-  #status button { height: 20px; padding: 0 8px; font-size: 12px; }
   #message { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #message.error { color: var(--error); }
   #message.ok { color: var(--ok); }
 </style>
 </head>
 <body>
-  <main id="list"></main>
-  <div id="status"><span id="message"></span><button id="new" title="Create a config file and open it in the editor">New config…</button></div>
+  <header id="bar">
+    <span class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="3" width="13" height="13" rx="2.5"/><rect x="8" y="8" width="13" height="13" rx="2.5" fill="currentColor" fill-opacity="0.2"/>
+      </svg>
+      WebOverlay
+    </span>
+    <label class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>
+      </svg>
+      <input id="search" type="search" placeholder="Search apps…" autocomplete="off" spellcheck="false" aria-label="Search apps">
+    </label>
+    <span class="spacer"></span>
+    <button id="configs-btn" aria-haspopup="true" aria-expanded="false" title="Config files">
+      Configs <span id="badge" class="badge" hidden></span><span class="chevron">▾</span>
+    </button>
+    <button id="new" class="primary" title="Create a config file and open it in the editor">New config…</button>
+    <div class="win">
+      <button data-win="minimize" title="Minimize" tabindex="-1">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+      </button>
+      <button data-win="toggle_maximize" title="Maximize" tabindex="-1">
+        <svg id="maximize-icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></svg>
+        <svg id="restore-icon" viewBox="0 0 24 24"><rect x="5" y="8" width="11" height="11"/><path d="M8 8V5h11v11h-3"/></svg>
+      </button>
+      <button id="close" data-win="close" title="Close" tabindex="-1">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </header>
+  <main id="list"><div id="grid"></div><div id="note"></div></main>
+  <div id="status"><span id="message"></span></div>
+  <div id="menu" class="popover" role="menu" hidden></div>
+  <div id="configs" class="popover" hidden></div>
 
 <script>
   const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
   const $ = (id) => document.getElementById(id);
+  const search = $("search");
+  const grid = $("grid");
+  const menu = $("menu");
+  const configsPop = $("configs");
+
+  const KINDS = { user: "User config", folder: "Folder config", added: "Config" };
+
+  // Last launcher_list result: `items` = deduplicated apps, recent first.
+  let state = { items: [], configs: [] };
 
   function el(tag, props = {}, ...children) {
     const node = Object.assign(document.createElement(tag), props);
     node.append(...children);
+    return node;
+  }
+
+  function button(label, action, props = {}) {
+    const node = el("button", { textContent: label, ...props });
+    node.addEventListener("click", action);
     return node;
   }
 
@@ -167,6 +355,8 @@
     return `${Math.floor(d / 86400)} d ago`;
   }
 
+  const keyOf = (config, app) => JSON.stringify([config, app]);
+
   function avatar(name, icon) {
     if (icon) return el("img", { className: "avatar", src: icon, alt: "" });
     let hash = 0;
@@ -188,96 +378,261 @@
     }
   }
 
-  // Favicon downloads of apps without cached icon, by config + app: one try per launcher run.
-  const fetched = new Map();
-
-  function fetchIcon(config, app) {
-    const key = JSON.stringify([config, app]);
-    if (!fetched.has(key)) fetched.set(key, invoke("launcher_icon", { config, app }).catch(() => null));
-    return fetched.get(key);
-  }
-
-  function card(title, sub, config, app, icon, disabled = false) {
-    const face = avatar(title, icon);
-    const button = el(
-      "button",
-      { className: "card", disabled, title: disabled ? "No longer in its config" : `${title} — ${config}` },
-      face,
-      el("span", { className: "text" }, el("span", { textContent: title }), el("span", { className: "sub", textContent: sub })),
-    );
-    button.addEventListener("click", () => run("launcher_open", { config, app }, title));
-    if (!icon && !disabled) {
-      fetchIcon(config, app).then((url) => url && face.replaceWith(avatar(title, url)));
-    }
-    return button;
-  }
-
-  function recentSection(recent) {
-    const grid = el("div", { className: "grid" });
-    for (const r of recent) {
-      grid.append(card(r.title, `${host(r.url)} · ${ago(r.opened)}`, r.config, r.app, r.icon, !r.available));
-    }
-    return el("section", {}, el("div", { className: "head" }, el("span", { className: "title", textContent: "Recent" })), grid);
-  }
-
-  function configSection(c) {
-    const head = el(
-      "div",
-      { className: "head" },
-      el("span", { className: "title", textContent: { user: "User config", folder: "Folder config" }[c.kind] || "Config" }),
-      // rtl keeps the end of long paths visible; the bdi keeps the path itself ltr.
-      el("span", { className: "path", title: c.path }, el("bdi", { dir: "ltr", textContent: c.path })),
-    );
-    if (c.apps.length) {
-      const all = el("button", { textContent: "Open all" });
-      all.addEventListener("click", () => run("launcher_open", { config: c.path, app: null }, "all apps"));
-      head.append(all);
-    }
-    const edit = el("button", { textContent: c.exists ? "Edit" : "Create" });
-    edit.addEventListener("click", () => run("launcher_edit", { config: c.path }, "the editor"));
-    head.append(edit);
-    if (c.kind === "added") {
-      const forget = el("button", { textContent: "Forget", title: "Remove from this list (the file is kept)" });
-      forget.addEventListener("click", async () => {
-        try {
-          await invoke("launcher_forget", { config: c.path });
-          setMessage("");
-          refresh();
-        } catch (e) {
-          setMessage(String(e), "error");
-        }
-      });
-      head.append(forget);
-    }
-
-    const section = el("section", {}, head);
-    if (!c.exists) {
-      section.append(el("div", { className: "note", textContent: "No config yet." }));
-    } else if (c.error) {
-      section.append(el("div", { className: "note error", textContent: c.error }));
-    } else if (!c.apps.length) {
-      section.append(el("div", { className: "note", textContent: "No app defined." }));
-    } else {
-      const grid = el("div", { className: "grid" });
-      for (const a of c.apps) grid.append(card(a.title, host(a.url), c.path, a.name, a.icon));
-      section.append(grid);
-    }
-    return section;
-  }
-
-  async function refresh() {
+  async function act(cmd, args) {
     try {
-      const { recent, configs } = await invoke("launcher_list");
-      const sections = [];
-      if (recent.length) sections.push(recentSection(recent));
-      sections.push(...configs.map(configSection));
-      $("list").replaceChildren(...sections);
+      await invoke(cmd, args);
+      setMessage("");
+      refresh();
     } catch (e) {
       setMessage(String(e), "error");
     }
   }
 
-  $("new").addEventListener("click", async () => {
+  // Favicon downloads of apps without cached icon, by config + app: one try per launcher run.
+  const fetched = new Map();
+
+  function fetchIcon(config, app) {
+    const key = keyOf(config, app);
+    if (!fetched.has(key)) fetched.set(key, invoke("launcher_icon", { config, app }).catch(() => null));
+    return fetched.get(key);
+  }
+
+  // Recent entries first (newest first), then the config apps not already listed, in config order.
+  // A config app also in recent keeps the recent position but takes the config's current title/url.
+  function collect(recent, configs) {
+    const listed = new Set(configs.map((c) => c.path));
+    const items = new Map();
+    for (const r of recent) {
+      items.set(keyOf(r.config, r.app), {
+        config: r.config,
+        app: r.app,
+        title: r.title,
+        url: r.url,
+        icon: r.icon,
+        opened: r.opened,
+        available: r.available,
+        editable: listed.has(r.config),
+      });
+    }
+    for (const c of configs) {
+      for (const a of c.apps) {
+        const key = keyOf(c.path, a.name);
+        const item = { config: c.path, app: a.name, title: a.title, url: a.url, icon: a.icon, available: true, editable: true };
+        items.set(key, Object.assign(items.get(key) ?? { opened: null }, item));
+      }
+    }
+    return [...items.values()];
+  }
+
+  // Popovers: one open at a time, closed by outside click, Escape or window blur.
+  let popover = null;
+  let popoverReturn = null;
+
+  function openPopover(node, x, y, back, alignRight = false) {
+    closePopover();
+    node.hidden = false;
+    popover = node;
+    popoverReturn = back;
+    if (alignRight) x -= node.offsetWidth;
+    node.style.left = `${Math.max(8, Math.min(x, innerWidth - node.offsetWidth - 8))}px`;
+    node.style.top = `${Math.max(8, Math.min(y, innerHeight - node.offsetHeight - 8))}px`;
+    $("configs-btn").setAttribute("aria-expanded", popover === configsPop);
+  }
+
+  function closePopover(restoreFocus = false) {
+    if (!popover) return;
+    popover.hidden = true;
+    popover = null;
+    $("configs-btn").setAttribute("aria-expanded", false);
+    if (restoreFocus) popoverReturn?.focus();
+  }
+
+  document.addEventListener("mousedown", (e) => {
+    if (popover && !popover.contains(e.target) && !e.target.closest("#configs-btn")) closePopover();
+  });
+  window.addEventListener("blur", () => closePopover());
+  window.addEventListener("resize", () => {
+    closePopover();
+    windowAction("state");
+  });
+
+  // Window controls (undecorated window).
+  async function windowAction(action) {
+    try {
+      const maximized = await invoke("launcher_window", { action });
+      $("bar").classList.toggle("maximized", maximized);
+      document.querySelector('[data-win="toggle_maximize"]').title = maximized ? "Restore" : "Maximize";
+    } catch (e) {
+      console.error(action, e);
+    }
+  }
+
+  for (const node of document.querySelectorAll("[data-win]")) {
+    node.addEventListener("click", () => windowAction(node.dataset.win));
+  }
+
+  // Empty title bar area moves the window; double click toggles maximize.
+  $("bar").addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || e.target.closest("button, .search")) return;
+    windowAction(e.detail === 2 ? "toggle_maximize" : "start_dragging");
+  });
+
+  function showMenu(item, tile, event) {
+    const entries = [];
+    if (item.available) entries.push(["Open", () => run("launcher_open", { config: item.config, app: item.app }, item.title)]);
+    if (item.editable) entries.push(["Edit config", () => run("launcher_edit", { config: item.config }, "the editor")]);
+    if (item.opened != null) {
+      entries.push(["Remove from recent", () => act("launcher_forget_recent", { config: item.config, app: item.app }), "danger"]);
+    }
+    menu.replaceChildren(
+      el(
+        "div",
+        { className: "menu-head" },
+        el("div", { textContent: item.available ? item.title : `${item.title} (no longer in its config)` }),
+        el("div", { className: "sub", title: item.config }, el("bdi", { dir: "ltr", textContent: item.config })),
+      ),
+      ...entries.map(([label, action, className = ""]) =>
+        button(label, () => {
+          closePopover(true);
+          action();
+        }, { className, role: "menuitem" }),
+      ),
+    );
+    // Keyboard-triggered `contextmenu` events have no pointer position.
+    const pointer = event && (event.clientX || event.clientY);
+    const rect = tile.getBoundingClientRect();
+    openPopover(menu, pointer ? event.clientX : rect.left, pointer ? event.clientY : rect.bottom + 4, tile);
+    menu.querySelector("button")?.focus();
+  }
+
+  function tooltip(item) {
+    const lines = [item.title, host(item.url) + (item.opened != null ? ` · opened ${ago(item.opened)}` : ""), item.config];
+    if (!item.available) lines.splice(1, 0, "No longer in its config");
+    return lines.join("\n");
+  }
+
+  function cell(item) {
+    const face = avatar(item.title, item.icon);
+    const tile = el(
+      "button",
+      { className: item.available ? "tile" : "tile gone", title: tooltip(item) },
+      face,
+      el("span", { className: "name", textContent: item.title }),
+    );
+    tile.dataset.key = keyOf(item.config, item.app);
+    tile.addEventListener("click", () =>
+      item.available ? run("launcher_open", { config: item.config, app: item.app }, item.title) : showMenu(item, tile),
+    );
+    tile.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      showMenu(item, tile, e);
+    });
+    const more = button("⋯", () => showMenu(item, tile), { className: "more", title: "More actions", tabIndex: -1 });
+    if (!item.icon && item.available) {
+      fetchIcon(item.config, item.app).then((url) => url && face.replaceWith(avatar(item.title, url)));
+    }
+    const node = el("div", { className: "cell" }, tile, more);
+    node.haystack = `${item.title} ${item.app} ${host(item.url)}`.toLowerCase();
+    return node;
+  }
+
+  function configRow(c) {
+    const status = !c.exists
+      ? "No config yet"
+      : c.error
+        ? "Invalid"
+        : c.apps.length
+          ? `${c.apps.length} app${c.apps.length > 1 ? "s" : ""}`
+          : "No app";
+    const actions = el("div", { className: "actions" });
+    if (c.apps.length) {
+      actions.append(button("Open all", () => {
+        closePopover();
+        run("launcher_open", { config: c.path, app: null }, "all apps");
+      }));
+    }
+    actions.append(button(c.exists ? "Edit" : "Create", () => {
+      closePopover();
+      run("launcher_edit", { config: c.path }, "the editor");
+    }));
+    if (c.kind === "added") {
+      actions.append(button("Forget", () => act("launcher_forget", { config: c.path }), {
+        title: "Remove from this list (the file is kept)",
+      }));
+    }
+    return el(
+      "div",
+      { className: "cfg" },
+      el(
+        "div",
+        { className: "cfg-head" },
+        el("span", { className: "kind", textContent: KINDS[c.kind] || "Config" }),
+        el("span", { className: c.error ? "state error" : "state", textContent: status }),
+      ),
+      // rtl keeps the end of long paths visible; the bdi keeps the path itself ltr.
+      el("div", { className: "path", title: c.path }, el("bdi", { dir: "ltr", textContent: c.path })),
+      c.error ? el("div", { className: "note error", textContent: c.error }) : "",
+      actions,
+    );
+  }
+
+  function renderConfigs() {
+    configsPop.replaceChildren(
+      ...(state.configs.length ? state.configs.map(configRow) : [el("div", { className: "note cfg", textContent: "No config found." })]),
+    );
+  }
+
+  function emptyState() {
+    const actions = el("div", { className: "actions" }, button("New config…", createConfig, { className: "primary" }));
+    const user = state.configs.find((c) => c.kind === "user");
+    if (user) {
+      actions.append(button(user.exists ? "Edit user config" : "Create user config", () =>
+        run("launcher_edit", { config: user.path }, "the editor"),
+      ));
+    }
+    return el(
+      "div",
+      { className: "empty" },
+      el("div", { className: "empty-title", textContent: "No apps yet" }),
+      el("p", { textContent: "Create a config file, or edit your user config, and add an [[app]] table." }),
+      actions,
+    );
+  }
+
+  const visibleTiles = () => [...grid.children].filter((c) => !c.hidden).map((c) => c.firstChild);
+
+  function applyFilter() {
+    const query = search.value.trim().toLowerCase();
+    for (const node of grid.children) node.hidden = !node.haystack.includes(query);
+    let note = "";
+    if (!state.items.length) note = emptyState();
+    else if (!visibleTiles().length) note = el("div", { className: "note", textContent: `No app matches “${search.value.trim()}”.` });
+    $("note").replaceChildren(note);
+  }
+
+  function render() {
+    const focused = document.activeElement?.dataset?.key;
+    grid.replaceChildren(...state.items.map(cell));
+    applyFilter();
+    if (focused) visibleTiles().find((t) => t.dataset.key === focused)?.focus();
+    const errors = state.configs.filter((c) => c.error).length;
+    $("badge").hidden = !errors;
+    $("badge").textContent = errors;
+    $("badge").title = `${errors} invalid config${errors > 1 ? "s" : ""}`;
+    if (popover === configsPop) renderConfigs();
+  }
+
+  async function refresh() {
+    try {
+      const { recent, configs } = await invoke("launcher_list");
+      state = { items: collect(recent, configs), configs };
+      render();
+    } catch (e) {
+      setMessage(String(e), "error");
+    }
+  }
+
+  async function createConfig() {
     try {
       const path = await invoke("launcher_create");
       if (path) setMessage(`Created ${path}`, "ok");
@@ -285,11 +640,78 @@
     } catch (e) {
       setMessage(String(e), "error");
     }
+  }
+
+  // Arrow keys move between visible tiles; Up from the first row goes back to the search field.
+  function gridNav(tile, key) {
+    const tiles = visibleTiles();
+    const i = tiles.indexOf(tile);
+    const top = tiles[0].parentElement.offsetTop;
+    const columns = tiles.filter((t) => t.parentElement.offsetTop === top).length;
+    const j = i + { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[key];
+    if (j < 0) {
+      if (key === "ArrowUp") search.focus();
+    } else if (j < tiles.length) {
+      tiles[j].focus();
+    } else if (key === "ArrowDown" && Math.floor(i / columns) < Math.floor((tiles.length - 1) / columns)) {
+      tiles.at(-1).focus();
+    }
+  }
+
+  search.addEventListener("input", applyFilter);
+  search.addEventListener("keydown", (e) => {
+    if (popover) return;
+    const tiles = visibleTiles();
+    if (e.key === "Enter") {
+      tiles.find((t) => !t.classList.contains("gone"))?.click();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      tiles[0]?.focus();
+    } else if (e.key === "Escape" && search.value) {
+      // Handled here: WebKit's own clearing of type=search doesn't always fire `input`.
+      e.preventDefault();
+      search.value = "";
+      applyFilter();
+    } else if (e.key === "Escape") {
+      search.blur();
+    }
   });
+
+  document.addEventListener("keydown", (e) => {
+    if (popover) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePopover(true);
+      } else if (popover === menu && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        e.preventDefault();
+        const items = [...menu.querySelectorAll("button")];
+        const i = items.indexOf(document.activeElement);
+        items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+      }
+      return;
+    }
+    const tile = e.target.closest?.(".tile");
+    if (tile && e.key.startsWith("Arrow")) {
+      e.preventDefault();
+      gridNav(tile, e.key);
+    } else if (e.target !== search && e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Type to search: the key lands in the field once it has the focus.
+      search.focus();
+    }
+  });
+
+  $("configs-btn").addEventListener("click", (e) => {
+    if (popover === configsPop) return closePopover();
+    renderConfigs();
+    const rect = e.currentTarget.getBoundingClientRect();
+    openPopover(configsPop, rect.right, rect.bottom + 6, e.currentTarget, true);
+  });
+  $("new").addEventListener("click", createConfig);
 
   // Pick up config edits and new recent entries made by other instances.
   window.addEventListener("focus", refresh);
   refresh();
+  windowAction("state");
 </script>
 </body>
 </html>

@@ -17,6 +17,7 @@ use crate::config::{self, Config};
 use crate::icon;
 use crate::inject;
 use crate::window::AppWindow;
+use crate::window::{show_when_loaded, theme_color, PAGE_BG};
 
 /// Contains `:`, so it can't clash with an app window label (`[A-Za-z0-9_-]+`).
 pub const LAUNCHER_LABEL: &str = "weboverlay:launcher";
@@ -24,7 +25,7 @@ pub const LAUNCHER_LABEL: &str = "weboverlay:launcher";
 const RECENT_MAX: usize = 10;
 
 /// Content of a config created from the launcher.
-const NEW_CONFIG: &str = r#"# WebOverlay config: one [[app]] table per window. Script/style paths are relative to this file.
+const NEW_CONFIG: &str = r##"# WebOverlay config: one [[app]] table per window. Script/style paths are relative to this file.
 # Uncomment and adapt the example below; every key except `name` and `url` is optional.
 
 # [[app]]
@@ -34,6 +35,7 @@ const NEW_CONFIG: &str = r#"# WebOverlay config: one [[app]] table per window. S
 # width = 1200                        # default 1200
 # height = 800                        # default 800
 # maximized = false                   # width/height still apply when restored
+# zoom = 1.0                          # initial page zoom (0.3 to 3.0), also the header's zoom reset
 # user_agent = "Mozilla/5.0 ..."      # default: WebView user agent
 # allowed_hosts = ["example.com", "*.example.com"]   # default: host of `url`; others open in the system browser
 # styles = [
@@ -43,7 +45,11 @@ const NEW_CONFIG: &str = r#"# WebOverlay config: one [[app]] table per window. S
 #   { path = "example/early.js", run_at = "document-start" },              # document-start | document-end (default) | document-idle
 #   { path = "example/main.js", run_at = "document-end", matches = ["https://example.com/*"] },
 # ]
-"#;
+# [app.header]
+# color = "#1e3a8a"                   # background (#rgb / #rrggbb), default: system theme
+# text_color = "#ffffff"              # default: light or dark, following `color`
+# hide = ["zoom", "edit"]             # back | forward | reload | home | favicon | title | url | zoom | edit | external
+"##;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecentEntry {
@@ -98,7 +104,11 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
     )
     .title("WebOverlay")
     .inner_size(760.0, 560.0)
+    .decorations(false)
+    .visible(false)
+    .on_page_load(show_when_loaded)
     .build()?;
+    let _ = window.set_background_color(Some(theme_color(&window.as_ref().window(), PAGE_BG)));
     icon::set_launcher_id(&window.as_ref().window());
     Ok(())
 }
@@ -148,6 +158,13 @@ fn merge_recent(old: Vec<RecentEntry>, new: Vec<RecentEntry>) -> Vec<RecentEntry
     }
     list.truncate(RECENT_MAX);
     list
+}
+
+/// `list` without app `app` of `config`.
+fn remove_recent(list: Vec<RecentEntry>, config: &Path, app: &str) -> Vec<RecentEntry> {
+    list.into_iter()
+        .filter(|e| !(e.config == config && e.app == app))
+        .collect()
 }
 
 /// Adds the opened apps to the recent list (errors are only logged).
@@ -443,6 +460,45 @@ pub fn launcher_forget(webview: Webview, config: PathBuf) -> Result<(), String> 
     save_list(&list_path, &list)
 }
 
+/// Window controls of the undecorated launcher (its page draws the title bar).
+/// Returns whether the window is maximized.
+#[tauri::command]
+pub fn launcher_window(webview: Webview, action: String) -> Result<bool, String> {
+    check_caller(&webview)?;
+    let window = webview.window();
+    let result = match action.as_str() {
+        "state" => Ok(()),
+        "minimize" => window.minimize(),
+        "toggle_maximize" => match window.is_maximized() {
+            Ok(true) => window.unmaximize(),
+            _ => window.maximize(),
+        },
+        "close" => window.close(),
+        "start_dragging" => window.start_dragging(),
+        _ => return Err(format!("unknown action {action:?}")),
+    };
+    result.map_err(|e| e.to_string())?;
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
+/// Removes an app from the recent list.
+#[tauri::command]
+pub fn launcher_forget_recent(
+    webview: Webview,
+    config: PathBuf,
+    app: String,
+) -> Result<(), String> {
+    check_caller(&webview)?;
+    let path = recent_path().ok_or("cannot determine the local data directory")?;
+    let list: Vec<RecentEntry> = load_list(&path);
+    let len = list.len();
+    let list = remove_recent(list, &config, &app);
+    if list.len() == len {
+        return Err(format!("{app} is not a recent app"));
+    }
+    save_list(&path, &list)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +542,18 @@ mod tests {
     }
 
     #[test]
+    fn removes_recent() {
+        let list = vec![entry("a", "x"), entry("a", "y"), entry("b", "x")];
+        let list = remove_recent(list, Path::new("a"), "x");
+        let keys: Vec<_> = list
+            .iter()
+            .map(|e| (e.config.clone(), &e.app[..]))
+            .collect();
+        assert_eq!(keys, [("a".into(), "y"), ("b".into(), "x")]);
+        assert_eq!(remove_recent(list, Path::new("c"), "x").len(), 2);
+    }
+
+    #[test]
     fn adds_config() {
         let list = add_config(vec!["a".into(), "b".into()], "b".into());
         assert_eq!(list, [PathBuf::from("b"), PathBuf::from("a")]);
@@ -505,6 +573,7 @@ mod tests {
         assert_eq!(app.name, "example");
         assert_eq!(app.scripts.len(), 2);
         assert_eq!(app.styles.len(), 1);
+        assert_eq!(app.header.hide.len(), 2);
     }
 
     #[test]

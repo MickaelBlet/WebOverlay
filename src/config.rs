@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 #[derive(Debug, Deserialize)]
@@ -26,6 +26,9 @@ pub struct AppConfig {
     /// Start maximized (`width`/`height` still apply when restored).
     #[serde(default)]
     pub maximized: bool,
+    /// Initial page zoom (1.0 = 100%), also the target of the header's zoom reset.
+    #[serde(default = "default_zoom")]
+    pub zoom: f64,
     pub user_agent: Option<String>,
     /// Host wildcards allowed inside the window; anything else opens in the system browser.
     /// Defaults to the host of `url`.
@@ -35,6 +38,84 @@ pub struct AppConfig {
     pub scripts: Vec<ScriptEntry>,
     #[serde(default)]
     pub styles: Vec<StyleEntry>,
+    #[serde(default)]
+    pub header: HeaderConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeaderConfig {
+    /// Background color; the text color follows its luminance unless `text_color` is set.
+    pub color: Option<HexColor>,
+    pub text_color: Option<HexColor>,
+    /// Header items not shown.
+    #[serde(default)]
+    pub hide: Vec<HeaderItem>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HeaderItem {
+    Back,
+    Forward,
+    Reload,
+    Home,
+    Favicon,
+    Title,
+    Url,
+    Zoom,
+    Edit,
+    External,
+}
+
+/// `#rgb` or `#rrggbb`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
+pub struct HexColor(pub u8, pub u8, pub u8);
+
+impl TryFrom<String> for HexColor {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        let error = || format!("invalid color {text:?}, expected #rgb or #rrggbb");
+        let hex = text.strip_prefix('#').ok_or_else(error)?;
+        if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(error());
+        }
+        let channel = |s: &str| u8::from_str_radix(s, 16).map_err(|_| error());
+        match hex.len() {
+            3 => {
+                let short = |i: usize| channel(&hex[i..=i]).map(|v| v * 17);
+                Ok(Self(short(0)?, short(1)?, short(2)?))
+            }
+            6 => Ok(Self(
+                channel(&hex[0..2])?,
+                channel(&hex[2..4])?,
+                channel(&hex[4..6])?,
+            )),
+            _ => Err(error()),
+        }
+    }
+}
+
+impl HexColor {
+    /// WCAG relative luminance below the black/white contrast midpoint.
+    pub fn is_dark(self) -> bool {
+        let linear = |c: u8| {
+            let c = f64::from(c) / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let l = 0.2126 * linear(self.0) + 0.7152 * linear(self.1) + 0.0722 * linear(self.2);
+        l < 0.179
+    }
+
+    pub fn rgba(self, alpha: f64) -> String {
+        format!("rgba({}, {}, {}, {alpha})", self.0, self.1, self.2)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +154,13 @@ fn default_width() -> f64 {
 fn default_height() -> f64 {
     800.0
 }
+
+fn default_zoom() -> f64 {
+    1.0
+}
+
+pub const ZOOM_MIN: f64 = 0.3;
+pub const ZOOM_MAX: f64 = 3.0;
 
 /// `config.toml` next to the executable (portable mode) if present, else the user config dir.
 pub fn default_path() -> Result<PathBuf> {
@@ -143,6 +231,12 @@ impl Config {
             }
             if !names.insert(app.name.clone()) {
                 bail!("duplicate app name {:?}", app.name);
+            }
+            if !(ZOOM_MIN..=ZOOM_MAX).contains(&app.zoom) {
+                bail!(
+                    "app {:?}: zoom must be between {ZOOM_MIN} and {ZOOM_MAX}",
+                    app.name
+                );
             }
             if !matches!(app.url.scheme(), "http" | "https") {
                 bail!("app {:?}: url must be http(s)", app.name);
@@ -215,6 +309,7 @@ mod tests {
         assert_eq!(app.scripts[0].run_at, RunAt::DocumentStart);
         assert_eq!(app.width, 1200.0);
         assert!(!app.maximized);
+        assert_eq!(app.zoom, 1.0);
     }
 
     #[test]
@@ -233,10 +328,53 @@ mod tests {
     }
 
     #[test]
+    fn zoom_range() {
+        let app = |zoom: &str| {
+            Config::parse(&format!(
+                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nzoom = {zoom}"
+            ))
+        };
+        assert_eq!(app("1.25").unwrap().apps[0].zoom, 1.25);
+        assert_eq!(app("2").unwrap().apps[0].zoom, 2.0);
+        assert!(app("0.1").is_err());
+        assert!(app("5.0").is_err());
+        assert!(app("nan").is_err());
+    }
+
+    #[test]
     fn rejects_non_http_url() {
         let text = r#"[[app]]
             name = "a"
             url = "file:///etc/passwd""#;
+        assert!(Config::parse(text).is_err());
+    }
+
+    #[test]
+    fn parses_header() {
+        let config = Config::parse(
+            r##"[[app]]
+            name = "a"
+            url = "https://a.com"
+            [app.header]
+            color = "#1E3a8a"
+            text_color = "#fff"
+            hide = ["zoom", "edit"]"##,
+        )
+        .unwrap();
+        let header = &config.apps[0].header;
+        assert_eq!(header.color, Some(HexColor(0x1e, 0x3a, 0x8a)));
+        assert_eq!(header.text_color, Some(HexColor(255, 255, 255)));
+        assert_eq!(header.hide, [HeaderItem::Zoom, HeaderItem::Edit]);
+        assert!(HexColor(0x1e, 0x3a, 0x8a).is_dark());
+        assert!(!HexColor(0xf3, 0xf4, 0xf6).is_dark());
+        for bad in ["red", "#12", "#12345g", "123456", "#+1+2+3"] {
+            let text = format!(
+                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nheader = {{ color = \"{bad}\" }}"
+            );
+            assert!(Config::parse(&text).is_err(), "{bad}");
+        }
+        let text =
+            "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nheader = { hide = [\"close\"] }";
         assert!(Config::parse(text).is_err());
     }
 

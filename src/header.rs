@@ -8,12 +8,11 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Url, Webview};
 
+use crate::config::{HeaderConfig, HexColor, ZOOM_MAX, ZOOM_MIN};
 use crate::editor;
 use crate::icon;
 use crate::window::{self, AppWindow};
 
-const ZOOM_MIN: f64 = 0.3;
-const ZOOM_MAX: f64 = 3.0;
 const ZOOM_STEP: f64 = 0.1;
 
 /// Evaluated in the content page: best declared icon, else `/favicon.ico`.
@@ -56,12 +55,55 @@ struct HeaderState<'a> {
     maximized: bool,
 }
 
+#[derive(Serialize)]
+struct HeaderSetup<'a> {
+    /// CSS custom properties overriding the theme ones of `dist/header.html`.
+    vars: Vec<(&'static str, String)>,
+    color_scheme: Option<&'static str>,
+    hide: &'a [crate::config::HeaderItem],
+}
+
+/// Initialization script of the header webview: `window.weboverlaySetup`, applied by the page
+/// before its first paint.
+pub fn setup_script(config: &HeaderConfig) -> String {
+    let hex = |c: HexColor| format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2);
+    let mut vars = Vec::new();
+    let mut color_scheme = None;
+    if let Some(bg) = config.color {
+        vars.push(("--bg", hex(bg)));
+        color_scheme = Some(if bg.is_dark() { "dark" } else { "light" });
+    }
+    let fg = config.text_color.or(config.color.map(|bg| {
+        if bg.is_dark() {
+            HexColor(0xf3, 0xf4, 0xf6)
+        } else {
+            HexColor(0x11, 0x18, 0x27)
+        }
+    }));
+    if let Some(fg) = fg {
+        vars.extend([
+            ("--fg", hex(fg)),
+            ("--muted", fg.rgba(0.65)),
+            ("--hover", fg.rgba(0.1)),
+            ("--active", fg.rgba(0.18)),
+            ("--border", fg.rgba(0.15)),
+        ]);
+    }
+    let setup = HeaderSetup {
+        vars,
+        color_scheme,
+        hide: &config.hide,
+    };
+    let json = serde_json::to_string(&setup).expect("setup serializes");
+    format!("window.weboverlaySetup = {json};")
+}
+
 pub fn register(handle: &AppHandle, label: &str, app: Arc<AppWindow>) {
     let state = WindowState {
         url: app.config.url.to_string(),
         title: app.config.title.clone().unwrap_or_default(),
         favicon: String::new(),
-        zoom: 1.0,
+        zoom: app.config.zoom,
         app,
     };
     lock(handle).insert(label.to_owned(), state);
@@ -160,11 +202,8 @@ pub fn push_state(handle: &AppHandle, label: &str) {
     let _ = header.eval(js);
 }
 
-/// Zoom level after a step in `direction` (-1, 0 = reset, +1), clamped and rounded to the step.
+/// Zoom level after a step in `direction` (-1, +1), clamped and rounded to the step.
 fn next_zoom(current: f64, direction: i8) -> f64 {
-    if direction == 0 {
-        return 1.0;
-    }
     let steps = (current / ZOOM_STEP).round() + f64::from(direction.signum());
     (steps * ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX)
 }
@@ -198,15 +237,14 @@ pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
             Ok(())
         }
         "zoom_in" | "zoom_out" | "zoom_reset" => {
-            let direction = match action.as_str() {
-                "zoom_in" => 1,
-                "zoom_out" => -1,
-                _ => 0,
-            };
             let zoom = {
                 let mut states = lock(handle);
                 let state = states.get_mut(&label).ok_or("unknown window")?;
-                state.zoom = next_zoom(state.zoom, direction);
+                state.zoom = match action.as_str() {
+                    "zoom_in" => next_zoom(state.zoom, 1),
+                    "zoom_out" => next_zoom(state.zoom, -1),
+                    _ => state.app.config.zoom,
+                };
                 state.zoom
             };
             let result = content.set_zoom(zoom);
@@ -247,10 +285,28 @@ mod tests {
     }
 
     #[test]
+    fn setup_script_colors() {
+        let config = HeaderConfig {
+            color: Some(HexColor(0x1e, 0x3a, 0x8a)),
+            text_color: None,
+            hide: vec![crate::config::HeaderItem::Zoom],
+        };
+        let js = setup_script(&config);
+        assert!(js.contains(r##"["--bg","#1e3a8a"]"##), "{js}");
+        assert!(js.contains(r##"["--fg","#f3f4f6"]"##), "{js}");
+        assert!(js.contains(r#""color_scheme":"dark""#), "{js}");
+        assert!(js.contains(r#""hide":["zoom"]"#), "{js}");
+        let js = setup_script(&HeaderConfig::default());
+        assert_eq!(
+            js,
+            r#"window.weboverlaySetup = {"vars":[],"color_scheme":null,"hide":[]};"#
+        );
+    }
+
+    #[test]
     fn zoom_steps_and_clamps() {
         assert!((next_zoom(1.0, 1) - 1.1).abs() < 1e-9);
         assert!((next_zoom(1.0, -1) - 0.9).abs() < 1e-9);
-        assert_eq!(next_zoom(1.7, 0), 1.0);
         assert_eq!(next_zoom(ZOOM_MAX, 1), ZOOM_MAX);
         assert_eq!(next_zoom(ZOOM_MIN, -1), ZOOM_MIN);
         // Repeated steps don't drift.

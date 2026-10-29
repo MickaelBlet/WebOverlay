@@ -8,6 +8,7 @@ title = "Demo"
 width = 1000
 height = 700
 # maximized = true
+# zoom = 1.25
 # user_agent = "Mozilla/5.0 ..."
 allowed_hosts = ["example.com", "*.example.com"]
 styles = [{ path = "demo/style.css" }]
@@ -15,3 +16,8 @@ scripts = [
   { path = "demo/early.js", run_at = "document-start" },
   { path = "demo/banner.js", run_at = "document-end", matches = ["https://example.com/*"] },
 ]
+
+[app.header]
+color = "#1e3a8a"
+# text_color = "#ffffff"
+hide = ["zoom"]

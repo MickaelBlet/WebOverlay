@@ -10,11 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Launcher shows each app's favicon (the last one seen by the app, else the site's `/favicon.ico`), cached in `<local data dir>/weboverlay/icons/`.
+- `zoom` app key: initial page zoom (0.3 to 3.0), also used by the header's zoom reset.
+- `[app.header]` config table: header background `color`, `text_color` (default follows the background) and `hide` to remove header items (`back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom`, `edit`, `external`).
+- Launcher: search field (type anywhere to search, `Enter` opens the first match), arrow-key navigation, per-app menu (`⋯` or right click: open, edit config, remove from recent).
+
+### Changed
+
+- New app icon (the launcher logo: two overlapping windows, blue on dark).
+- Smaller header bar (30 px instead of 36 px).
+- Redesigned launcher: a single grid of app tiles (recent apps first, each app listed once) and a 30 px title bar (undecorated window: drag to move, double click to maximize, own window controls) with search, a `Configs` menu (paths, errors, `Open all` / `Edit` / `Forget`) and `New config…`.
 
 ### Fixed
 
 - Favicon download trusts the OS certificate store, so the window icon works behind corporate TLS inspection (Windows kept the app icon).
 - Windows: the launcher and editor show the app icon in the taskbar (the launcher showed an app favicon); the launcher gets its own taskbar button, and its pin reopens the launcher.
+- No white flash on open: app, launcher and editor windows stay hidden until their local page (header, launcher, editor) has loaded, and the site area of an app window shows the theme background until the site has loaded (Windows flashed white there).
 
 ## [0.1.0] - 2026-10-28
 

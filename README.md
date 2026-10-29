@@ -62,36 +62,49 @@ title = "Gmail"                    # optional, default: page title
 width = 1200                       # optional
 height = 800                       # optional
 maximized = false                  # optional, start maximized (also `--maximized` on the command line)
+zoom = 1.25                        # optional, initial page zoom (0.3 to 3.0, default 1.0), also the zoom reset
 user_agent = "..."                 # optional
 allowed_hosts = ["*.google.com"]   # optional, default: host of url; `*.x` also matches `x`
 styles = [{ path = "gmail/dark.css", matches = [] }]
 scripts = [
   { path = "gmail/main.js", run_at = "document-end", matches = ["https://mail.google.com/mail/*"] },
 ]
+
+[app.header]                       # optional
+color = "#c5221f"                  # optional, background (#rgb / #rrggbb), default: system theme
+text_color = "#ffffff"             # optional, default: light or dark, following `color`
+hide = ["zoom", "edit"]            # optional, header items not shown
 ```
 
 | Field     | Values |
 | --------- | ------ |
 | `run_at`  | `document-start` (before page scripts), `document-end` (DOMContentLoaded, default), `document-idle` (load) |
 | `matches` | Wildcards (`*`) on `location.href`, case-insensitive; empty = every page |
+| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `edit`, `external` (window controls always stay) |
 
 Paths are relative to the config file. Files are read at startup: restart the app after editing.
 
 ## Launcher
 
-`weboverlay` without app nor `--config` opens the launcher instead of the apps:
-
-- **Recent**: the last 10 apps opened (from the launcher or the command line), stored in
-  `<local data dir>/weboverlay/recent.json`; apps no longer in their config are greyed out.
-- **Folder config** (`config.toml` next to the executable, when present) and **User config**
-  (`<config dir>/weboverlay/config.toml`): their apps, `Open all`, and `Edit` (`Create` when missing).
-- **Config**: configs created with `New config…` (native "save as" dialog; the file is created from a
-  commented example of every key unless it exists, then opened in the editor), stored in
-  `<local data dir>/weboverlay/configs.json`; `Forget` removes one from the list (the file is kept).
+`weboverlay` without app nor `--config` opens the launcher instead of the apps: one grid of app tiles,
+the recent apps first (the last 10 opened, from the launcher or the command line, stored in
+`<local data dir>/weboverlay/recent.json`), then the other apps of the local configs. Each app is listed once;
+recent apps no longer in their config are greyed out. The top bar (search, `Configs`, `New config…`) is the window's
+title bar: drag it to move the window, double click to maximize.
 
 One click starts the app in a new WebOverlay process (`--config <path> <app>`); the launcher stays open.
-Cards show the app favicon: the last one seen by the app (cached as
+Tiles show the app favicon: the last one seen by the app (cached as
 `<local data dir>/weboverlay/icons/<id>.png`), else the site's `/favicon.ico`, else a letter.
+
+- **Search**: type anywhere to filter on title, app name and host; `Enter` opens the first match, `Esc` clears.
+  Arrow keys move between tiles.
+- **App menu** (`⋯` on hover, right click or the menu key): `Open`, `Edit config`, `Remove from recent`.
+- **Configs** menu in the header: **Folder config** (`config.toml` next to the executable, when present),
+  **User config** (`<config dir>/weboverlay/config.toml`) and the configs created with `New config…`, with
+  their path, errors (the button shows how many configs are invalid), `Open all` and `Edit` (`Create` when missing).
+- **New config…**: native "save as" dialog; the file is created from a commented example of every key unless it
+  exists, then opened in the editor. These configs are stored in `<local data dir>/weboverlay/configs.json`;
+  `Forget` removes one from the list (the file is kept).
 
 ## Editor
 

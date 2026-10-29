@@ -7,17 +7,22 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tauri::webview::{NewWindowFeatures, NewWindowResponse, PageLoadEvent, WebviewBuilder};
-use tauri::window::WindowBuilder;
+use tauri::window::{Color, WindowBuilder};
 use tauri::{
-    AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl, WebviewWindowBuilder,
-    Window, WindowEvent, Wry,
+    AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Theme, Url, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, Window, WindowEvent, Wry,
 };
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, HexColor};
 use crate::header;
 use crate::icon;
 
-pub const HEADER_HEIGHT: f64 = 36.0;
+pub const HEADER_HEIGHT: f64 = 30.0;
+
+/// `--bg` of the local pages (light, dark), painted before they load to avoid a white flash.
+pub const HEADER_BG: (Color, Color) =
+    (Color(0xf3, 0xf4, 0xf6, 0xff), Color(0x1f, 0x29, 0x37, 0xff));
+pub const PAGE_BG: (Color, Color) = (Color(0xff, 0xff, 0xff, 0xff), Color(0x11, 0x18, 0x27, 0xff));
 
 static POPUP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -35,6 +40,22 @@ pub fn header_label(window: &str) -> String {
 
 pub fn content_label(window: &str) -> String {
     format!("{window}:content")
+}
+
+/// The `(light, dark)` color matching the system theme of `window`.
+pub fn theme_color(window: &Window, (light, dark): (Color, Color)) -> Color {
+    match window.theme() {
+        Ok(Theme::Dark) => dark,
+        _ => light,
+    }
+}
+
+/// `on_page_load` handler for windows built with `.visible(false)`: shows them once their local
+/// page has loaded, so the webview's white background never flashes on screen.
+pub fn show_when_loaded(window: WebviewWindow, payload: tauri::webview::PageLoadPayload<'_>) {
+    if payload.event() == PageLoadEvent::Finished {
+        let _ = window.show();
+    }
 }
 
 /// Settings shared by the content webview and popups (`WebviewBuilder` / `WebviewWindowBuilder`).
@@ -69,16 +90,26 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
         .inner_size(app.config.width, app.config.height)
         .decorations(false)
         .maximized(app.config.maximized)
+        // Shown once the header has loaded: no blank window while the webviews start.
+        .visible(false)
         .build()?;
     icon::set_app_id(&window, &app);
     header::register(handle, &label, app.clone());
+    // Shows through the content area until the site has loaded.
+    let _ = window.set_background_color(Some(theme_color(&window, PAGE_BG)));
 
     // Same data directory as the content: one browser environment per app.
     let header_view =
         WebviewBuilder::new(header_label(&label), WebviewUrl::App("header.html".into()))
             .data_directory(app.profile_dir.clone())
+            .background_color(match app.config.header.color {
+                Some(HexColor(r, g, b)) => Color(r, g, b, 0xff),
+                None => theme_color(&window, HEADER_BG),
+            })
+            .initialization_script(header::setup_script(&app.config.header))
             .on_page_load(|webview, payload| {
                 if payload.event() == PageLoadEvent::Finished {
+                    let _ = webview.window().show();
                     header::push_state(webview.app_handle(), webview.window().label());
                 }
             });
@@ -92,6 +123,8 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     )
     .on_page_load(|webview, payload| {
         if payload.event() == PageLoadEvent::Finished {
+            // Hidden until then: WebView2 / WebKit paint white before the first frame.
+            let _ = webview.show();
             header::refresh_favicon(&webview);
         }
         let window = webview.window();
@@ -128,7 +161,12 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     fix_header_height(&header_webview);
     #[cfg(not(target_os = "linux"))]
     let _ = header_webview;
-    window.add_child(content_view, content_rect.position, content_rect.size)?;
+    let content_webview =
+        window.add_child(content_view, content_rect.position, content_rect.size)?;
+    content_webview.hide()?;
+    if app.config.zoom != 1.0 {
+        let _ = content_webview.set_zoom(app.config.zoom);
+    }
 
     window.on_window_event({
         let window = window.clone();
@@ -245,6 +283,9 @@ fn new_window(
     match result {
         Ok(window) => {
             icon::set_app_id(&window.as_ref().window(), app);
+            if app.config.zoom != 1.0 {
+                let _ = window.set_zoom(app.config.zoom);
+            }
             NewWindowResponse::Create { window }
         }
         Err(e) => {
