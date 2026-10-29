@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Launcher: sort menu at the right of the status bar (name A→Z by default, Z→A, recently opened first), remembered between runs.
 
+### Fixed
+
+- Launcher: an opened app moves to the top of the recent apps right away (it needed a focus change).
+
 ## [0.1.1] - 2026-10-29
 
 ### Added

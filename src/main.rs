@@ -147,7 +147,7 @@ fn prepare() -> Result<Option<Launch>> {
             }))
         })
         .collect::<Result<Vec<_>>>()?;
-    launcher::record(&config_path, &apps);
+    launcher::record(&config_path, apps.iter().map(|app| &app.config));
     Ok(Some(Launch {
         config_path,
         apps,

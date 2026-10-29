@@ -7,16 +7,14 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Webview, WebviewUrl, WebviewWindowBuilder};
 
-use crate::config::{self, Config};
+use crate::config::{self, AppConfig, Config};
 use crate::icon;
 use crate::inject;
-use crate::window::AppWindow;
 use crate::window::{show_when_loaded, theme_color, PAGE_BG};
 
 /// Contains `:`, so it can't clash with an app window label (`[A-Za-z0-9_-]+`).
@@ -169,7 +167,7 @@ fn remove_recent(list: Vec<RecentEntry>, config: &Path, app: &str) -> Vec<Recent
 }
 
 /// Adds the opened apps to the recent list (errors are only logged).
-pub fn record(config_path: &Path, apps: &[Arc<AppWindow>]) {
+pub fn record<'a>(config_path: &Path, apps: impl IntoIterator<Item = &'a AppConfig>) {
     let Some(path) = recent_path() else {
         return;
     };
@@ -179,12 +177,12 @@ pub fn record(config_path: &Path, apps: &[Arc<AppWindow>]) {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let new = apps
-        .iter()
+        .into_iter()
         .map(|app| RecentEntry {
             config: config.clone(),
-            app: app.config.name.clone(),
-            title: app.config.title.clone().unwrap_or(app.config.name.clone()),
-            url: app.config.url.to_string(),
+            app: app.name.clone(),
+            title: app.title.clone().unwrap_or(app.name.clone()),
+            url: app.url.to_string(),
             opened,
         })
         .collect();
@@ -370,11 +368,16 @@ pub fn launcher_open(webview: Webview, config: PathBuf, app: Option<String>) -> 
     }
     // The new instance would exit silently on these errors: report them here instead.
     let loaded = Config::load(&config).map_err(|e| format!("{e:#}"))?;
-    for entry in &loaded.apps {
-        if app.as_ref().is_none_or(|app| &entry.name == app) {
-            inject::build_scripts(entry).map_err(|e| format!("{e:#}"))?;
-        }
+    let opened: Vec<&AppConfig> = loaded
+        .apps
+        .iter()
+        .filter(|entry| app.as_ref().is_none_or(|app| &entry.name == app))
+        .collect();
+    for entry in &opened {
+        inject::build_scripts(entry).map_err(|e| format!("{e:#}"))?;
     }
+    // Recorded here too (not only by the new instance) so the launcher can refresh right away.
+    record(&config, opened);
     let mut args = vec![OsString::from("--config"), config.into_os_string()];
     args.extend(app.map(OsString::from));
     spawn(args)

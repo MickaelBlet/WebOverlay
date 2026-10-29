@@ -398,6 +398,7 @@
     try {
       await invoke(cmd, args);
       setMessage(`Started ${label}`, "ok");
+      if (cmd === "launcher_open") refresh();
     } catch (e) {
       setMessage(String(e), "error");
     }
