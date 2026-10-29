@@ -14,6 +14,7 @@ use tauri::{
 };
 
 use crate::config::{AppConfig, HexColor};
+use crate::download;
 use crate::header;
 use crate::icon;
 
@@ -72,7 +73,8 @@ macro_rules! configure {
                 let app = app.clone();
                 let handle = $handle.clone();
                 move |url, features| new_window(&handle, &app, url, features)
-            });
+            })
+            .on_download(download::handle);
         if let Some(ua) = &app.config.user_agent {
             builder = builder.user_agent(ua);
         }
@@ -164,6 +166,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     let content_webview =
         window.add_child(content_view, content_rect.position, content_rect.size)?;
     content_webview.hide()?;
+    download::setup(&content_webview, None);
     if app.config.zoom != 1.0 {
         let _ = content_webview.set_zoom(app.config.zoom);
     }
@@ -283,6 +286,7 @@ fn new_window(
     match result {
         Ok(window) => {
             icon::set_app_id(&window.as_ref().window(), app);
+            download::setup(window.as_ref(), Some(window.clone()));
             if app.config.zoom != 1.0 {
                 let _ = window.set_zoom(app.config.zoom);
             }

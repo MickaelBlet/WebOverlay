@@ -11,6 +11,7 @@ Open any website as a standalone desktop webapp (Tauri 2) and inject your own Ja
 - Scripts and styles injected on every page load, filtered by URL wildcards.
 - Built-in editor for the config and its script/style files (TOML/JS/CSS highlighting).
 - Off-host links and popups open in the system browser.
+- File downloads with a native "save as" dialog (on Linux, shown once the download has finished).
 - Remote pages get no Tauri IPC access.
 
 ## Prerequisites

@@ -31,6 +31,8 @@ rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+# Download policy and popup handling of the content webview (`download.rs`), same version as wry.
+webkit2gtk = "2.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell_PropertiesSystem", "Win32_Storage_EnhancedStorage", "Win32_System_Com_StructuredStorage", "Win32_UI_WindowsAndMessaging"] }
