@@ -103,7 +103,8 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
         WebviewUrl::App("launcher.html".into()),
     )
     .title("WebOverlay")
-    .inner_size(760.0, 560.0)
+    .inner_size(600.0, 400.0)
+    .min_inner_size(420.0, 240.0)
     .decorations(false)
     .visible(false)
     .on_page_load(show_when_loaded)
