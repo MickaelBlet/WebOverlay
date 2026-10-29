@@ -7,6 +7,8 @@ import { highlight } from "./highlight.js";
 import * as view from "./view.js";
 import * as edit from "./edit.js";
 import { register, handleKey } from "./keymap.js";
+import "./complete.js";
+import "./check.js";
 
 let restartArmed = false;
 /** Paths, most recently used first (Ctrl+Tab). */
@@ -273,6 +275,9 @@ $("restart").addEventListener("click", restart);
 
 document.fonts.ready.then(view.measure);
 view.measure();
+invoke("editor_schema")
+  .then((schema) => (state.schema = schema))
+  .catch((e) => setMessage(String(e), "error"));
 refreshFiles()
   .then(() => state.files.length && openFile(state.files[0].path))
   .catch((e) => setMessage(String(e), "error"));

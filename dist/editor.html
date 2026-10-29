@@ -26,6 +26,7 @@
     --fn: #0e7490;
     --bool: #c2410c;
     --curline: rgba(0, 0, 0, 0.035);
+    --widget: #ffffff;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -50,6 +51,7 @@
       --fn: #67e8f9;
       --bool: #fda4af;
       --curline: rgba(255, 255, 255, 0.04);
+      --widget: #1f2937;
       color-scheme: dark;
     }
   }
@@ -196,6 +198,56 @@
   #message.ok { color: var(--ok); }
   #message.warn { color: var(--dirty); }
   #pos, #lang { color: var(--muted); flex: none; }
+  #problem { flex: 0 1 auto; max-width: 50%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--error); }
+  #problem.link { cursor: pointer; }
+  #problem.link:hover { text-decoration: underline; }
+
+  .squiggle {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.5l1.5-2 1.5 2 1.5-2 1.5 2' fill='none' stroke='%23ef4444' stroke-width='1'/%3E%3C/svg%3E") repeat-x left bottom;
+  }
+
+  .widget {
+    position: absolute;
+    z-index: 10;
+    background: var(--widget);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    font-size: 12px;
+  }
+  #suggest { display: flex; align-items: flex-start; }
+  #suggest[hidden], #hover[hidden] { display: none; }
+  #suggest-list {
+    list-style: none;
+    margin: 0;
+    padding: 2px 0;
+    width: 340px;
+    max-height: 242px;
+    overflow-y: auto;
+    font: 12px/22px ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace;
+  }
+  #suggest-list li { display: flex; gap: 6px; padding: 0 8px 0 4px; cursor: pointer; white-space: nowrap; }
+  #suggest-list li:hover { background: var(--hover); }
+  #suggest-list li.sel { background: var(--active); }
+  #suggest-list .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #suggest-list .label b { color: var(--accent); font-weight: 700; }
+  #suggest-list .detail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; max-width: 45%; font-family: system-ui, sans-serif; font-size: 11px; }
+  .icon { width: 16px; flex: none; text-align: center; font-weight: 700; color: var(--muted); }
+  .k-key, .k-property { color: var(--key); }
+  .k-value, .k-keyword { color: var(--kw); }
+  .k-table { color: var(--sec); }
+  .k-method, .k-class { color: var(--fn); }
+  .k-variable { color: var(--num); }
+  #suggest-doc { width: 300px; border-left: 1px solid var(--border); align-self: stretch; max-height: 242px; overflow-y: auto; }
+  .doc { padding: 8px 10px; line-height: 1.45; }
+  #hover { max-width: 460px; pointer-events: none; }
+  .doc code { font: 12px ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace; color: var(--key); }
+  .d-title { font-weight: 600; margin-bottom: 4px; }
+  .d-type { color: var(--muted); font-weight: 400; }
+  .d-meta { color: var(--muted); margin-top: 4px; }
+  .d-values { margin: 6px 0 0; padding-left: 16px; }
+  .d-error { color: var(--error); margin-bottom: 4px; }
+  .d-error + .d-title { border-top: 1px solid var(--border); padding-top: 6px; }
 </style>
 </head>
 <body>
@@ -213,10 +265,13 @@
         <div id="deco" aria-hidden="true"><div id="deco-in"></div></div>
         <pre id="hl" aria-hidden="true"><code id="hl-code"></code></pre>
         <textarea id="text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
+        <div id="suggest" class="widget" hidden><ul id="suggest-list"></ul><div id="suggest-doc" class="doc"></div></div>
+        <div id="hover" class="widget doc" hidden></div>
       </div>
     </div>
     <div id="status">
       <span id="message"></span>
+      <span id="problem" hidden></span>
       <span id="lang"></span>
       <span id="pos"></span>
     </div>

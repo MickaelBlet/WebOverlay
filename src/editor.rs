@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager, State, Webview, WebviewUrl, WebviewWindowBuilder
 
 use crate::config::{self, Config};
 use crate::icon;
+use crate::schema::{KeyDoc, SCHEMA};
 use crate::window::{show_when_loaded, theme_color, PAGE_BG};
 
 /// Contains `:`, so it can't clash with an app window label (`[A-Za-z0-9_-]+`).
@@ -51,6 +52,15 @@ pub struct Files {
 pub struct FileContent {
     content: String,
     exists: bool,
+}
+
+/// Why a config text is invalid, with its location when known.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Diagnostic {
+    message: String,
+    /// UTF-16 offsets (JS string indexes) of the faulty text.
+    start: Option<usize>,
+    end: Option<usize>,
 }
 
 /// Opens the editor window, or focuses it when already open.
@@ -209,6 +219,39 @@ pub fn editor_write(
     write_file(&path, &content)
 }
 
+#[tauri::command]
+pub fn editor_schema(webview: Webview) -> Result<&'static [KeyDoc], String> {
+    check_caller(&webview)?;
+    Ok(SCHEMA)
+}
+
+/// Validates an unsaved config text (live diagnostics); touches no file.
+#[tauri::command]
+pub fn editor_check(webview: Webview, content: String) -> Result<Option<Diagnostic>, String> {
+    check_caller(&webview)?;
+    Ok(check(&content))
+}
+
+fn check(content: &str) -> Option<Diagnostic> {
+    let error = Config::parse(content).err()?;
+    let utf16 = |byte: usize| content.get(..byte).map(|s| s.encode_utf16().count());
+    match error.downcast_ref::<toml::de::Error>() {
+        Some(toml_error) => {
+            let span = toml_error.span();
+            Some(Diagnostic {
+                message: toml_error.message().to_owned(),
+                start: span.as_ref().and_then(|s| utf16(s.start)),
+                end: span.as_ref().and_then(|s| utf16(s.end)),
+            })
+        }
+        None => Some(Diagnostic {
+            message: format!("{error:#}"),
+            start: None,
+            end: None,
+        }),
+    }
+}
+
 /// Relaunches the app (without `--edit`) and exits this instance.
 #[tauri::command]
 pub fn editor_restart(
@@ -296,6 +339,21 @@ mod tests {
         assert_eq!(list.files.len(), 1);
         assert!(!list.files[0].exists);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn checks_config_text() {
+        let ok = "[[app]]\nname = \"a\"\nurl = \"https://a.com\"";
+        assert_eq!(check(ok), None);
+        // "é" is 2 bytes but 1 UTF-16 unit.
+        let typo = "# é\n[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nwidht = 1";
+        let d = check(typo).unwrap();
+        assert!(d.message.contains("widht"), "{}", d.message);
+        let at = typo.find("widht").unwrap() - 1;
+        assert_eq!((d.start, d.end), (Some(at), Some(at + 5)));
+        let semantic = check("[[app]]\nname = \"a b\"\nurl = \"https://a.com\"").unwrap();
+        assert!(semantic.message.contains("must match"));
+        assert_eq!(semantic.start, None);
     }
 
     #[test]

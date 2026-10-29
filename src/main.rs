@@ -6,6 +6,7 @@ mod header;
 mod icon;
 mod inject;
 mod launcher;
+mod schema;
 mod window;
 
 use std::path::PathBuf;
@@ -176,6 +177,8 @@ fn main() -> ExitCode {
             editor::editor_read,
             editor::editor_write,
             editor::editor_restart,
+            editor::editor_schema,
+            editor::editor_check,
             launcher::launcher_list,
             launcher::launcher_icon,
             launcher::launcher_open,

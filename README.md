@@ -113,6 +113,13 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
 
 - TOML/JS/CSS highlighting, line numbers, current line and matching bracket highlight.
 - VSCode shortcuts (below), auto-closed brackets and quotes, smart indentation.
+- Completion (`Ctrl+Space`, or while typing) with documentation: config keys of the current table (`[[app]]`,
+  `[app.header]`, `scripts`/`styles` items), their values (`run_at`, `hide`, booleans) and `[[app]]` /
+  `[app.header]` headers; JS: keywords, words of the file and DOM members (`document.`, `window.`…);
+  CSS: properties, values and `var(--x)`.
+- Hover a config key, value or header for its documentation (`Ctrl+K Ctrl+I` at the caret).
+- `config.toml` is checked while typing: the error is underlined, its line number turns red and the
+  status bar shows it (click to jump there).
 - `config.toml` is validated before saving: an invalid config is refused with the error shown.
 - Files referenced by the config but missing are marked `new` and created on save.
 - Restart relaunches WebOverlay (without `--edit`) to apply the changes.
@@ -129,6 +136,7 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
 | `Home` | First non-blank char, then line start |
 | `Ctrl+C` / `Ctrl+X` without selection | Copy / cut the line |
 | `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo |
+| `Ctrl+Space` · `Ctrl+K Ctrl+I` | Suggestions · documentation at the caret |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous file (most recently used first) |
 
 Punctuation shortcuts follow the physical US key on other layouts (AZERTY: `Ctrl+$` = `Ctrl+]`, like VSCode).
