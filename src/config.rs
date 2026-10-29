@@ -30,6 +30,8 @@ pub struct AppConfig {
     #[serde(default = "default_zoom")]
     pub zoom: f64,
     pub user_agent: Option<String>,
+    /// Image file used as window / taskbar / launcher icon instead of the site favicon.
+    pub icon: Option<PathBuf>,
     /// Host wildcards allowed inside the window; anything else opens in the system browser.
     /// Defaults to the host of `url`.
     #[serde(default)]
@@ -196,18 +198,21 @@ pub fn exe_path() -> Option<PathBuf> {
 }
 
 impl Config {
-    /// Loads the config and resolves relative script/style paths against the config directory.
+    /// Loads the config and resolves relative script/style/icon paths against the config directory.
     pub fn load(path: &Path) -> Result<Self> {
         let text = fs::read_to_string(path)
             .with_context(|| format!("cannot read config {}", path.display()))?;
         Self::parse_at(&text, path).with_context(|| format!("invalid config {}", path.display()))
     }
 
-    /// Parses `text` as the config file at `path` (relative script/style paths resolved).
+    /// Parses `text` as the config file at `path` (relative script/style/icon paths resolved).
     pub fn parse_at(text: &str, path: &Path) -> Result<Self> {
         let mut config = Self::parse(text)?;
         let base = path.parent().unwrap_or(Path::new("."));
         for app in &mut config.apps {
+            if let Some(icon) = &mut app.icon {
+                *icon = base.join(&*icon);
+            }
             for script in &mut app.scripts {
                 script.path = base.join(&script.path);
             }
@@ -311,6 +316,24 @@ mod tests {
         assert_eq!(app.width, 1200.0);
         assert!(!app.maximized);
         assert_eq!(app.zoom, 1.0);
+    }
+
+    #[test]
+    fn resolves_paths_against_config_dir() {
+        let config = Config::parse_at(
+            r#"
+            [[app]]
+            name = "demo"
+            url = "https://example.com/"
+            icon = "icons/demo.png"
+            scripts = [{ path = "a.js" }]
+            "#,
+            Path::new("/conf/config.toml"),
+        )
+        .unwrap();
+        let app = config.find("demo").unwrap();
+        assert_eq!(app.icon.as_deref(), Some(Path::new("/conf/icons/demo.png")));
+        assert_eq!(app.scripts[0].path, Path::new("/conf/a.js"));
     }
 
     #[test]

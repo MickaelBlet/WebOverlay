@@ -139,10 +139,12 @@ fn prepare() -> Result<Option<Launch>> {
         .map(|mut app| {
             app.maximized |= args.maximized;
             let scripts = inject::build_scripts(&app)?;
+            let icon = icon::load_configured(&app)?;
             let profile_dir = profiles.join(&app.name);
             Ok(Arc::new(AppWindow {
                 config: app,
                 scripts,
+                icon,
                 profile_dir,
                 config_path: absolute_config.clone(),
             }))

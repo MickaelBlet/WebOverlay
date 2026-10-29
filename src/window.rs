@@ -30,6 +30,8 @@ static POPUP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct AppWindow {
     pub config: AppConfig,
     pub scripts: Vec<String>,
+    /// Decoded `icon` of the config (replaces the favicon).
+    pub icon: Option<tauri::image::Image<'static>>,
     pub profile_dir: PathBuf,
     /// Absolute path of the config file the app comes from.
     pub config_path: PathBuf,
@@ -95,6 +97,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
         // Shown once the header has loaded: no blank window while the webviews start.
         .visible(false)
         .build()?;
+    icon::apply_configured(&window, &app);
     icon::set_app_id(&window, &app);
     header::register(handle, &label, app.clone());
     // Shows through the content area until the site has loaded.
@@ -286,6 +289,9 @@ fn new_window(
     match result {
         Ok(window) => {
             icon::set_app_id(&window.as_ref().window(), app);
+            if let Some(image) = &app.icon {
+                icon::set_window_icon(&window.as_ref().window(), image.clone());
+            }
             download::setup(window.as_ref(), Some(window.clone()));
             if app.config.zoom != 1.0 {
                 let _ = window.set_zoom(app.config.zoom);

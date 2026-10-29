@@ -210,6 +210,14 @@ pub static SCHEMA: &[KeyDoc] = &[
     ),
     key(
         "app",
+        "icon",
+        "path",
+        Some("the site favicon"),
+        "Image file (PNG, ICO, JPEG, GIF, WebP, BMP or SVG) used as window, taskbar and launcher icon instead of the site favicon. Relative to the config file, read at startup.",
+        "\"$0.png\"",
+    ),
+    key(
+        "app",
         "allowed_hosts",
         "array of strings",
         Some("the host of `url`"),

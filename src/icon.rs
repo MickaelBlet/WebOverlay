@@ -4,6 +4,7 @@
 //!
 //! The favicon is downloaded from Rust: the page and the header cannot read cross-origin image bytes.
 //! Linux: only X11 window managers use the window icon; Wayland compositors use the `.desktop` file.
+//! An app `icon` from the config replaces the favicon everywhere (window, taskbar, pin, launcher).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use base64::Engine;
 use tauri::image::Image;
 use tauri::{AppHandle, Manager, Url};
 
+use crate::config::AppConfig;
 use crate::header;
 use crate::window::AppWindow;
 
@@ -30,6 +32,9 @@ const LAUNCHER_ID: &str = "dev.blet.weboverlay.launcher";
 /// Downloads `favicon` in the background and sets it as the icon of window `label`.
 /// Falls back to `/favicon.ico` for undecodable icons, then to the app icon.
 pub fn update(handle: &AppHandle, label: &str, favicon: String, user_agent: Option<String>) {
+    if header::app(handle, label).is_some_and(|app| app.icon.is_some()) {
+        return; // the configured icon stays
+    }
     let handle = handle.clone();
     let label = label.to_owned();
     thread::spawn(move || {
@@ -51,15 +56,67 @@ pub fn update(handle: &AppHandle, label: &str, favicon: String, user_agent: Opti
         let icon = image.or_else(|| handle.default_window_icon().cloned());
         if let Some(icon) = icon {
             #[cfg(windows)]
-            {
-                set_taskbar_icon(&window, &icon);
-                if let Some(app) = &app {
-                    save_pin_icon(&window, app, &icon);
-                }
+            if let Some(app) = &app {
+                save_pin_icon(&window, app, &icon);
             }
-            let _ = window.set_icon(icon);
+            set_window_icon(&window, icon);
         }
     });
+}
+
+/// Image of the app `icon` key, read and decoded at startup so that a bad file fails early.
+pub fn load_configured(app: &AppConfig) -> anyhow::Result<Option<Image<'static>>> {
+    use anyhow::Context;
+
+    let Some(path) = &app.icon else {
+        return Ok(None);
+    };
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("app {:?}: cannot read icon {}", app.name, path.display()))?;
+    let image = decode(&bytes).with_context(|| {
+        format!(
+            "app {:?}: cannot decode icon {} (PNG, ICO, JPEG, GIF, WebP, BMP or SVG)",
+            app.name,
+            path.display()
+        )
+    })?;
+    Ok(Some(image))
+}
+
+/// Configured icon of a new app window: window and taskbar icon, launcher cache and, on Windows,
+/// the pin icon file (read by `set_app_id`: call this first). No-op without `icon` key.
+pub fn apply_configured(window: &tauri::Window, app: &AppWindow) {
+    let Some(icon) = &app.icon else {
+        return;
+    };
+    save_cached(&app_id(&app.config_path, &app.config.name), icon);
+    #[cfg(windows)]
+    if let Some(path) = pin_icon_path(app) {
+        if let Err(e) = write_image(&path, icon, 256, image::ImageFormat::Ico) {
+            eprintln!("weboverlay: cannot write {}: {e}", path.display());
+        }
+    }
+    set_window_icon(window, icon.clone());
+}
+
+/// Window icon, plus the taskbar / Alt+Tab one on Windows.
+pub fn set_window_icon(window: &tauri::Window, icon: Image<'_>) {
+    #[cfg(windows)]
+    set_taskbar_icon(window, &icon);
+    let _ = window.set_icon(icon);
+}
+
+/// Image file `path` as a launcher card icon (`data:image/png` URL, like `cached`).
+pub fn file_data_url(path: &Path) -> Option<String> {
+    let image = resized(&decode(&std::fs::read(path).ok()?)?, CACHE_SIZE).ok()?;
+    let mut png = Vec::new();
+    image
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .ok()?;
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png)
+    ))
 }
 
 fn candidates(favicon: &str) -> Vec<String> {
@@ -453,14 +510,7 @@ fn write_image(
     max: u32,
     format: image::ImageFormat,
 ) -> anyhow::Result<()> {
-    use anyhow::Context;
-
-    let rgba = image::RgbaImage::from_raw(icon.width(), icon.height(), icon.rgba().to_vec())
-        .context("invalid icon")?;
-    let mut image = image::DynamicImage::ImageRgba8(rgba);
-    if image.width() > max || image.height() > max {
-        image = image.resize(max, max, image::imageops::FilterType::Lanczos3);
-    }
+    let image = resized(icon, max)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -469,6 +519,19 @@ fn write_image(
     image.save_with_format(&tmp, format)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+/// `icon` downscaled to fit `max` px.
+fn resized(icon: &Image<'_>, max: u32) -> anyhow::Result<image::DynamicImage> {
+    use anyhow::Context;
+
+    let rgba = image::RgbaImage::from_raw(icon.width(), icon.height(), icon.rgba().to_vec())
+        .context("invalid icon")?;
+    let mut image = image::DynamicImage::ImageRgba8(rgba);
+    if image.width() > max || image.height() > max {
+        image = image.resize(max, max, image::imageops::FilterType::Lanczos3);
+    }
+    Ok(image)
 }
 
 #[cfg(test)]
@@ -528,6 +591,7 @@ mod tests {
         AppWindow {
             config: crate::config::Config::parse(&toml).unwrap().apps.remove(0),
             scripts: Vec::new(),
+            icon: None,
             profile_dir: PathBuf::new(),
             config_path: PathBuf::from(config),
         }
@@ -568,6 +632,33 @@ mod tests {
         let png = image::open(&path).unwrap();
         assert_eq!((png.width(), png.height()), (CACHE_SIZE, CACHE_SIZE / 2));
         assert!(!dir.join("a.png.tmp").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn configured_icon() {
+        let dir = std::env::temp_dir().join(format!("weboverlay-cfg-icon-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let svg = dir.join("icon.svg");
+        std::fs::write(&svg, br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="red"/></svg>"#).unwrap();
+        let mut app = app_window("/c.toml", "mail").config;
+        assert!(load_configured(&app).unwrap().is_none());
+        app.icon = Some(svg.clone());
+        let image = load_configured(&app).unwrap().unwrap();
+        assert_eq!((image.width(), image.height()), (SVG_SIZE, SVG_SIZE));
+        let url = file_data_url(&svg).unwrap();
+        let png = decode_data_url(url.strip_prefix("data:").unwrap()).unwrap();
+        let png = image::load_from_memory(&png).unwrap();
+        assert_eq!((png.width(), png.height()), (CACHE_SIZE, CACHE_SIZE));
+
+        let bad = dir.join("bad.png");
+        std::fs::write(&bad, b"not an image").unwrap();
+        app.icon = Some(bad);
+        let error = format!("{:#}", load_configured(&app).unwrap_err());
+        assert!(error.contains("cannot decode icon"), "{error}");
+        app.icon = Some(dir.join("missing.png"));
+        let error = format!("{:#}", load_configured(&app).unwrap_err());
+        assert!(error.contains("cannot read icon"), "{error}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

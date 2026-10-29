@@ -10,6 +10,7 @@ height = 700
 # maximized = true
 # zoom = 1.25
 # user_agent = "Mozilla/5.0 ..."
+# icon = "demo/icon.png"
 allowed_hosts = ["example.com", "*.example.com"]
 styles = [{ path = "demo/style.css" }]
 scripts = [

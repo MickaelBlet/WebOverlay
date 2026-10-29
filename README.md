@@ -7,7 +7,7 @@ Open any website as a standalone desktop webapp (Tauri 2) and inject your own Ja
 - One window per app, isolated profile (cookies, storage) per app.
 - Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, edit config, developer tools, open in browser, window controls.
   Shortcuts: Alt+←/→, F5 / Ctrl+R.
-- Site favicon as window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon (icon taken when pinned).
+- Site favicon (or the `icon` of the config) as window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon (icon taken when pinned).
 - Scripts and styles injected on every page load, filtered by URL wildcards.
 - Built-in editor for the config and its script/style files (TOML/JS/CSS highlighting).
 - Off-host links and popups open in the system browser.
@@ -67,6 +67,7 @@ height = 800                       # optional
 maximized = false                  # optional, start maximized (also `--maximized` on the command line)
 zoom = 1.25                        # optional, initial page zoom (0.3 to 3.0, default 1.0), also the zoom reset
 user_agent = "..."                 # optional
+icon = "gmail/icon.png"            # optional, window/taskbar/launcher icon (PNG, ICO, JPEG, GIF, WebP, BMP, SVG), default: site favicon
 allowed_hosts = ["*.google.com"]   # optional, default: host of url; `*.x` also matches `x`
 styles = [{ path = "gmail/dark.css", matches = [] }]
 scripts = [
@@ -98,7 +99,7 @@ config order), and the choice is remembered. The top bar (search, `Configs`, `Ne
 title bar: drag it to move the window, double click to maximize.
 
 One click starts the app in a new WebOverlay process (`--config <path> <app>`); the launcher stays open.
-Tiles show the app favicon: the last one seen by the app (cached as
+Tiles show the app `icon` from the config, else the app favicon: the last one seen by the app (cached as
 `<local data dir>/weboverlay/icons/<id>.png`), else the site's `/favicon.ico`, else a letter.
 
 - **Search**: type anywhere to filter on title, app name and host; `Enter` opens the first match, `Esc` clears.

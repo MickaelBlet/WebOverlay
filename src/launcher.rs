@@ -35,6 +35,7 @@ const NEW_CONFIG: &str = r##"# WebOverlay config: one [[app]] table per window. 
 # maximized = false                   # width/height still apply when restored
 # zoom = 1.0                          # initial page zoom (0.3 to 3.0), also the header's zoom reset
 # user_agent = "Mozilla/5.0 ..."      # default: WebView user agent
+# icon = "example/icon.png"           # window/taskbar/launcher icon (PNG, ICO, SVG...), default: site favicon
 # allowed_hosts = ["example.com", "*.example.com"]   # default: host of `url`; others open in the system browser
 # styles = [
 #   { path = "example/style.css", matches = ["https://example.com/*"] },   # matches: default every page
@@ -67,6 +68,9 @@ struct RecentItem {
     available: bool,
     /// Cached favicon (`data:` URL), filled by `launcher_list`.
     icon: Option<String>,
+    /// `icon` of the app in its config.
+    #[serde(skip)]
+    icon_path: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -76,6 +80,9 @@ struct AppEntry {
     url: String,
     /// Cached favicon (`data:` URL), filled by `launcher_list`.
     icon: Option<String>,
+    /// `icon` of the app in its config.
+    #[serde(skip)]
+    icon_path: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -213,6 +220,7 @@ fn config_entry(kind: &'static str, path: PathBuf) -> ConfigEntry {
                     name: app.name,
                     url: app.url.to_string(),
                     icon: None,
+                    icon_path: app.icon,
                 })
                 .collect();
         }
@@ -237,12 +245,11 @@ fn sources_from(recent: Vec<RecentEntry>, locals: Vec<(&'static str, PathBuf)>) 
             let config = loaded
                 .entry(entry.config.clone())
                 .or_insert_with(|| Config::load(&entry.config).ok());
-            let available = config
-                .as_ref()
-                .is_some_and(|c| c.find(&entry.app).is_some());
+            let app = config.as_ref().and_then(|c| c.find(&entry.app));
             RecentItem {
+                available: app.is_some(),
+                icon_path: app.and_then(|app| app.icon.clone()),
                 entry,
-                available,
                 icon: None,
             }
         })
@@ -287,12 +294,21 @@ impl Sources {
     }
 
     fn with_icons(mut self) -> Self {
+        // The configured icon, else the last favicon seen by the app.
         for item in &mut self.recent {
-            item.icon = icon::cached(&item.entry.config, &item.entry.app);
+            item.icon = item
+                .icon_path
+                .as_deref()
+                .and_then(icon::file_data_url)
+                .or_else(|| icon::cached(&item.entry.config, &item.entry.app));
         }
         for entry in &mut self.configs {
             for app in &mut entry.apps {
-                app.icon = icon::cached(&entry.path, &app.name);
+                app.icon = app
+                    .icon_path
+                    .as_deref()
+                    .and_then(icon::file_data_url)
+                    .or_else(|| icon::cached(&entry.path, &app.name));
             }
         }
         self
@@ -375,6 +391,7 @@ pub fn launcher_open(webview: Webview, config: PathBuf, app: Option<String>) -> 
         .collect();
     for entry in &opened {
         inject::build_scripts(entry).map_err(|e| format!("{e:#}"))?;
+        icon::load_configured(entry).map_err(|e| format!("{e:#}"))?;
     }
     // Recorded here too (not only by the new instance) so the launcher can refresh right away.
     record(&config, opened);
