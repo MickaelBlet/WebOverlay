@@ -107,10 +107,10 @@
     font-size: 12px;
   }
   #search:focus, #sort:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
-  #toolbar { display: flex; justify-content: flex-end; margin: -10px 0 8px; }
-  #toolbar label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
   #sort {
-    height: 22px;
+    flex: none;
+    margin-left: 8px;
+    height: 20px;
     padding: 0 4px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -277,7 +277,7 @@
   #status {
     display: flex;
     height: 26px;
-    padding: 0 14px;
+    padding: 0 3px 0 14px;
     align-items: center;
     border-top: 1px solid var(--border);
     background: var(--panel);
@@ -321,18 +321,16 @@
     </div>
   </header>
   <main id="list">
-    <div id="toolbar">
-      <label>Sort
-        <select id="sort" title="Sort apps">
-          <option value="asc">Name A→Z</option>
-          <option value="desc">Name Z→A</option>
-          <option value="recent">Recently opened</option>
-        </select>
-      </label>
-    </div>
     <div id="grid"></div><div id="note"></div>
   </main>
-  <div id="status"><span id="message"></span></div>
+  <div id="status">
+    <span id="message"></span>
+    <select id="sort" title="Sort apps" aria-label="Sort apps">
+      <option value="asc">Name A→Z</option>
+      <option value="desc">Name Z→A</option>
+      <option value="recent">Recently opened</option>
+    </select>
+  </div>
   <div id="menu" class="popover" role="menu" hidden></div>
   <div id="configs" class="popover" hidden></div>
 
@@ -648,7 +646,7 @@
     const query = search.value.trim().toLowerCase();
     for (const node of grid.children) node.hidden = !node.haystack.includes(query);
     let note = "";
-    $("toolbar").hidden = !state.items.length;
+    sort.hidden = !state.items.length;
     if (!state.items.length) note = emptyState();
     else if (!visibleTiles().length) note = el("div", { className: "note", textContent: `No app matches “${search.value.trim()}”.` });
     $("note").replaceChildren(note);
