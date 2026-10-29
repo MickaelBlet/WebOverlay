@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Favicon download trusts the OS certificate store, so the window icon works behind corporate TLS inspection (Windows kept the app icon).
 - Windows: the launcher and editor show the app icon in the taskbar (the launcher showed an app favicon); the launcher gets its own taskbar button, and its pin reopens the launcher.
+- Build: changing a file in `icons/` re-embeds the app icon (cached builds could keep the old exe and window icon).
 - No white flash on open: app, launcher and editor windows stay hidden until their local page (header, launcher, editor) has loaded, and the site area of an app window shows the theme background until the site has loaded (Windows flashed white there).
 
 ## [0.1.0] - 2026-10-28
