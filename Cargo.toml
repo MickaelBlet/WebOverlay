@@ -10,7 +10,8 @@ rust-version = "1.90"
 tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
-tauri = { version = "2.12", features = ["image-ico", "image-png", "unstable"] }
+# `devtools`: web inspector in release builds too (header button, F12).
+tauri = { version = "2.12", features = ["image-ico", "image-png", "unstable", "devtools"] }
 tauri-plugin-opener = "2.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

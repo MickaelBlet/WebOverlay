@@ -66,6 +66,7 @@ pub enum HeaderItem {
     Zoom,
     Edit,
     External,
+    Devtools,
 }
 
 /// `#rgb` or `#rrggbb`.

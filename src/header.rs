@@ -251,6 +251,14 @@ pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
             push_state(handle, &label);
             result
         }
+        "devtools" => {
+            if content.is_devtools_open() {
+                content.close_devtools();
+            } else {
+                content.open_devtools();
+            }
+            Ok(())
+        }
         "edit" => {
             editor::open_later(handle);
             Ok(())

@@ -46,7 +46,7 @@ const NEW_CONFIG: &str = r##"# WebOverlay config: one [[app]] table per window. 
 # [app.header]
 # color = "#1e3a8a"                   # background (#rgb / #rrggbb), default: system theme
 # text_color = "#ffffff"              # default: light or dark, following `color`
-# hide = ["zoom", "edit"]             # back | forward | reload | home | favicon | title | url | zoom | edit | external
+# hide = ["zoom", "edit"]             # back | forward | reload | home | favicon | title | url | zoom | edit | devtools | external
 "##;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

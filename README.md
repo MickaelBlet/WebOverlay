@@ -5,7 +5,7 @@
 Open any website as a standalone desktop webapp (Tauri 2) and inject your own JavaScript and CSS into it.
 
 - One window per app, isolated profile (cookies, storage) per app.
-- Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, edit config, open in browser, window controls.
+- Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, edit config, developer tools, open in browser, window controls.
   Shortcuts: Alt+←/→, F5 / Ctrl+R.
 - Site favicon as window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon (icon taken when pinned).
 - Scripts and styles injected on every page load, filtered by URL wildcards.
@@ -82,7 +82,7 @@ hide = ["zoom", "edit"]            # optional, header items not shown
 | --------- | ------ |
 | `run_at`  | `document-start` (before page scripts), `document-end` (DOMContentLoaded, default), `document-idle` (load) |
 | `matches` | Wildcards (`*`) on `location.href`, case-insensitive; empty = every page |
-| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `edit`, `external` (window controls always stay) |
+| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `edit`, `devtools`, `external` (window controls always stay) |
 
 Paths are relative to the config file. Files are read at startup: restart the app after editing.
 
@@ -150,7 +150,7 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
 Punctuation shortcuts follow the physical US key on other layouts (AZERTY: `Ctrl+$` = `Ctrl+]`, like VSCode).
 
 Each script runs inside its own function wrapped in `try/catch`; errors are logged to the devtools console
-(right click → Inspect in debug builds).
+(header terminal button, `F12` / `Ctrl+Shift+I` with the header focused, or right click → Inspect).
 
 ## Limitations
 

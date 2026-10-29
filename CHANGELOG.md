@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Launcher: sort menu at the right of the status bar (name A→Z by default, Z→A, recently opened first), remembered between runs.
+- Header: developer tools button (web inspector / console of the site, also F12 / Ctrl+Shift+I), available in release builds; `devtools` value for `[app.header] hide`.
 
 ### Fixed
 

@@ -100,6 +100,10 @@ const HEADER_ITEMS: &[ValueDoc] = &[
         value: "external",
         doc: "Open in the system browser button.",
     },
+    ValueDoc {
+        value: "devtools",
+        doc: "Developer tools (web inspector / console) button.",
+    },
 ];
 
 const BOOL: &[ValueDoc] = &[
