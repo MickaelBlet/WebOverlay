@@ -1,0 +1,258 @@
+<!doctype html>
+<!-- Downloads window: the downloads of this process, polled from Rust (downloads_list), actions via downloads_action. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Downloads</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f3f4f6;
+    --fg: #111827;
+    --muted: #6b7280;
+    --hover: rgba(0, 0, 0, 0.06);
+    --border: #d1d5db;
+    --accent: #2563eb;
+    --error: #dc2626;
+    --track: #e5e7eb;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111827;
+      --panel: #1f2937;
+      --fg: #f3f4f6;
+      --muted: #9ca3af;
+      --hover: rgba(255, 255, 255, 0.07);
+      --border: #374151;
+      --accent: #60a5fa;
+      --error: #f87171;
+      --track: #374151;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  body { display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 8px 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex: none;
+  }
+  #count { flex: 1; color: var(--muted); font-size: 12px; }
+  #clear {
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #clear:hover:not(:disabled) { background: var(--hover); }
+  #clear:disabled { opacity: 0.5; cursor: default; }
+  #list { flex: 1; overflow-y: auto; margin: 0; padding: 4px 0; list-style: none; }
+  #empty { margin: auto; color: var(--muted); text-align: center; padding: 24px; }
+  li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 8px 8px 12px;
+    border-radius: 6px;
+    margin: 0 4px;
+  }
+  li:hover { background: var(--hover); }
+  .icon { width: 28px; height: 28px; flex: none; color: var(--muted); }
+  li.done .icon { color: var(--accent); }
+  li.failed .icon, li.cancelled .icon { color: var(--error); }
+  .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li.cancelled .name, li.failed .name { text-decoration: line-through; color: var(--muted); }
+  .status { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  li.failed .status { color: var(--error); }
+  .bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+  .bar.indeterminate > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+  .actions { display: flex; gap: 2px; flex: none; }
+  .actions button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .actions button:hover { background: var(--hover); color: var(--fg); }
+  svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .actions svg { width: 15px; height: 15px; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <span id="count"></span>
+    <button id="clear" title="Remove the finished downloads from the list">Clear list</button>
+  </div>
+  <ul id="list"></ul>
+  <div id="empty" hidden>No downloads yet.</div>
+
+<script>
+  const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+  const action = (name, id) => invoke("downloads_action", { action: name, id }).then(refresh, (e) => console.error(name, e));
+  const $ = (id) => document.getElementById(id);
+
+  const ICONS = {
+    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    open: '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+    folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    cancel: '<path d="M6 6l12 12M18 6L6 18"/>',
+  };
+  const svg = (name, cls) => `<svg class="${cls || ""}" viewBox="0 0 24 24">${ICONS[name]}</svg>`;
+
+  const size = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+  };
+  const host = (url) => {
+    try {
+      const u = new URL(url);
+      return u.protocol.startsWith("http") ? u.host : u.protocol.slice(0, -1);
+    } catch (_) {
+      return "";
+    }
+  };
+
+  // Bytes per second of the running downloads, from the last two polls.
+  const speeds = new Map();
+  const status = (d) => {
+    if (d.state === "failed") return "Failed";
+    if (d.state === "cancelled") return "Cancelled";
+    const parts = [];
+    if (d.state === "running") {
+      parts.push(d.total ? `${size(d.received)} of ${size(d.total)}` : size(d.received));
+      const speed = speeds.get(d.id)?.speed;
+      if (speed) parts.push(`${size(speed)}/s`);
+    } else parts.push(size(d.received));
+    if (d.asking) parts.push("choose where to save…");
+    else if (d.state === "done") parts.push(host(d.url));
+    return parts.filter(Boolean).join(" · ");
+  };
+
+  const buttons = (d) => {
+    if (d.state === "running") return [["cancel", "Cancel"]];
+    if (d.asking) return [];
+    if (d.state === "done") return [["open", "Open"], ["reveal", "Show in folder"], ["remove", "Remove from list"]];
+    return [["remove", "Remove from list"]];
+  };
+  const BUTTON_ICONS = { cancel: "cancel", open: "open", reveal: "folder", remove: "cancel" };
+
+  // Rows are kept between polls (hover, focus): only their content is updated.
+  const rows = new Map();
+  const row = (d) => {
+    let li = rows.get(d.id);
+    if (!li) {
+      li = document.createElement("li");
+      li.innerHTML = `${svg("file", "icon")}<div class="info"><div class="name"></div><div class="bar"><div></div></div><div class="status"></div></div><div class="actions"></div>`;
+      li.addEventListener("dblclick", (e) => {
+        if (!e.target.closest("button") && li.dataset.state === "done") action("open", d.id);
+      });
+      rows.set(d.id, li);
+    }
+    li.className = d.state;
+    li.dataset.state = d.asking ? "asking" : d.state;
+    li.title = d.path;
+    li.querySelector(".name").textContent = d.name;
+    li.querySelector(".status").textContent = status(d);
+    const bar = li.querySelector(".bar");
+    bar.hidden = d.state !== "running";
+    bar.classList.toggle("indeterminate", !d.total);
+    bar.firstElementChild.style.width = d.total ? `${Math.min(100, (100 * d.received) / d.total)}%` : "";
+    const key = buttons(d).map(([name]) => name).join();
+    const actions = li.querySelector(".actions");
+    if (actions.dataset.key !== key) {
+      actions.dataset.key = key;
+      actions.replaceChildren(
+        ...buttons(d).map(([name, title]) => {
+          const button = document.createElement("button");
+          button.title = title;
+          button.innerHTML = svg(BUTTON_ICONS[name]);
+          button.addEventListener("click", () => action(name, d.id));
+          return button;
+        }),
+      );
+    }
+    return li;
+  };
+
+  const render = (list) => {
+    const now = performance.now();
+    for (const d of list) {
+      const last = speeds.get(d.id);
+      if (d.state !== "running") speeds.delete(d.id);
+      else if (!last) speeds.set(d.id, { at: now, received: d.received, speed: 0 });
+      else if (now - last.at >= 1000) {
+        const speed = ((d.received - last.received) * 1000) / (now - last.at);
+        speeds.set(d.id, { at: now, received: d.received, speed: last.speed ? (last.speed + speed) / 2 : speed });
+      }
+    }
+    const ids = new Set(list.map((d) => d.id));
+    for (const [id, li] of rows) {
+      if (!ids.has(id)) {
+        li.remove();
+        rows.delete(id);
+      }
+    }
+    const items = list.map(row);
+    items.forEach((li, i) => {
+      if ($("list").children[i] !== li) $("list").insertBefore(li, $("list").children[i] || null);
+    });
+    $("empty").hidden = list.length > 0;
+    $("list").hidden = list.length === 0;
+    const running = list.filter((d) => d.state === "running").length;
+    $("count").textContent = running ? `${running} in progress` : list.length ? `${list.length} download${list.length > 1 ? "s" : ""}` : "";
+    $("clear").disabled = !list.some((d) => d.state !== "running" && !d.asking);
+  };
+
+  let timer = null;
+  async function refresh() {
+    clearTimeout(timer);
+    try {
+      render(await invoke("downloads_list"));
+    } catch (e) {
+      console.error(e);
+    }
+    timer = setTimeout(refresh, document.hidden ? 2000 : 500);
+  }
+  $("clear").addEventListener("click", () => action("clear"));
+  window.addEventListener("focus", refresh);
+  refresh();
+</script>
+</body>
+</html>

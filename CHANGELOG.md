@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Downloads window (header downloads button, shown after the first download; `downloads` value for `[app.header] hide`; opens when a save destination is chosen): progress, speed, cancel, open the file, show it in its folder, clear the list. Replaces the WebView2 download flyout.
+- `open_downloads` app key: file extensions (e.g. `["ica"]` for Citrix) whose downloads skip the save dialog, stay in the downloads folder and open with their default app once finished.
+
+### Changed
+
+- Links and popups to hosts outside `allowed_hosts` that point to a download (`Content-Disposition: attachment` or a type browsers don't display, after redirects) are downloaded in the app instead of opening the system browser. The URL is fetched once by the app (no cookies) to decide, so off-host links reach the system browser a little later.
+- Linux: the "save as" dialog opens when the download starts instead of once it has finished; cancelling it stops the download.
+
 ## [0.2.0] - 2026-10-29
 
 ### Added

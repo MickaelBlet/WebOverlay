@@ -61,22 +61,25 @@ pub fn show_when_loaded(window: WebviewWindow, payload: tauri::webview::PageLoad
     }
 }
 
-/// Settings shared by the content webview and popups (`WebviewBuilder` / `WebviewWindowBuilder`).
+/// Settings shared by the content webview and popups (`WebviewBuilder` / `WebviewWindowBuilder`
+/// of webview `$label`). Downloads are tracked natively (`download::setup`).
 macro_rules! configure {
-    ($builder:expr, $handle:expr, $app:expr) => {{
+    ($builder:expr, $label:expr, $handle:expr, $app:expr) => {{
         let app: &Arc<AppWindow> = $app;
+        let label: String = $label;
         let mut builder = $builder
             .data_directory(app.profile_dir.clone())
             .on_navigation({
                 let app = app.clone();
-                move |url| allow_navigation(&app.config, url)
+                let handle = $handle.clone();
+                let label = label.clone();
+                move |url| allow_navigation(&handle, &app, &label, url)
             })
             .on_new_window({
                 let app = app.clone();
                 let handle = $handle.clone();
-                move |url, features| new_window(&handle, &app, url, features)
-            })
-            .on_download(download::handle);
+                move |url, features| new_window(&handle, &app, &label, url, features)
+            });
         if let Some(ua) = &app.config.user_agent {
             builder = builder.user_agent(ua);
         }
@@ -123,6 +126,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
             content_label(&label),
             WebviewUrl::External(app.config.url.clone())
         ),
+        content_label(&label),
         handle,
         &app
     )
@@ -169,7 +173,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     let content_webview =
         window.add_child(content_view, content_rect.position, content_rect.size)?;
     content_webview.hide()?;
-    download::setup(&content_webview, None);
+    download::setup(&content_webview, window.clone(), None);
     if app.config.zoom != 1.0 {
         let _ = content_webview.set_zoom(app.config.zoom);
     }
@@ -249,24 +253,46 @@ pub fn open_external(url: &Url) {
     }
 }
 
-fn allow_navigation(config: &AppConfig, url: &Url) -> bool {
-    if is_internal_scheme(url) || is_allowed(config, url) {
+fn allow_navigation(handle: &AppHandle, app: &AppWindow, webview: &str, url: &Url) -> bool {
+    if is_internal_scheme(url) || is_allowed(&app.config, url) || download::is_expected(url) {
         return true;
     }
-    open_external(url);
+    leave(handle, app, webview, url);
     false
 }
 
-/// `window.open` / `target="_blank"`: allowed hosts get a real popup (keeps `window.opener`,
-/// needed for OAuth flows), everything else goes to the system browser.
+/// `url` is outside the allowed hosts: a download is loaded in `webview` (which saves it and
+/// stays on its page), anything else opens in the system browser. Probed from a thread.
+fn leave(handle: &AppHandle, app: &AppWindow, webview: &str, url: &Url) {
+    if !matches!(url.scheme(), "http" | "https") {
+        open_external(url);
+        return;
+    }
+    let (handle, webview, url) = (handle.clone(), webview.to_owned(), url.clone());
+    let user_agent = app.config.user_agent.clone();
+    std::thread::spawn(move || {
+        if download::probe(&url, user_agent.as_deref()) {
+            if let Some(webview) = handle.get_webview(&webview) {
+                if webview.navigate(url.clone()).is_ok() {
+                    return;
+                }
+            }
+        }
+        open_external(&url);
+    });
+}
+
+/// `window.open` / `target="_blank"` from webview `opener`: allowed hosts get a real popup
+/// (keeps `window.opener`, needed for OAuth flows), everything else is left to `leave`.
 fn new_window(
     handle: &AppHandle,
     app: &Arc<AppWindow>,
+    opener: &str,
     url: Url,
     features: NewWindowFeatures,
 ) -> NewWindowResponse<Wry> {
     if !is_allowed(&app.config, &url) && url.scheme() != "about" {
-        open_external(&url);
+        leave(handle, app, opener, &url);
         return NewWindowResponse::Deny;
     }
     let label = format!(
@@ -277,6 +303,7 @@ fn new_window(
     let blank = WebviewUrl::External("about:blank".parse().expect("valid url"));
     let result = configure!(
         WebviewWindowBuilder::new(handle, &label, blank),
+        label.clone(),
         handle,
         app
     )
@@ -292,7 +319,10 @@ fn new_window(
             if let Some(image) = &app.icon {
                 icon::set_window_icon(&window.as_ref().window(), image.clone());
             }
-            download::setup(window.as_ref(), Some(window.clone()));
+            let parent = handle
+                .get_window(&app.config.name)
+                .unwrap_or_else(|| window.as_ref().window());
+            download::setup(window.as_ref(), parent, Some(window.clone()));
             if app.config.zoom != 1.0 {
                 let _ = window.set_zoom(app.config.zoom);
             }

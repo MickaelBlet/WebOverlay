@@ -36,6 +36,10 @@ pub struct AppConfig {
     /// Defaults to the host of `url`.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
+    /// Extensions (`ica`, `tar.gz`) of downloads opened with their default app, without the
+    /// save dialog. Stored lowercase, without the leading dot.
+    #[serde(default)]
+    pub open_downloads: Vec<String>,
     #[serde(default)]
     pub scripts: Vec<ScriptEntry>,
     #[serde(default)]
@@ -66,6 +70,7 @@ pub enum HeaderItem {
     Title,
     Url,
     Zoom,
+    Downloads,
     Edit,
     External,
     Devtools,
@@ -247,6 +252,17 @@ impl Config {
             if !matches!(app.url.scheme(), "http" | "https") {
                 bail!("app {:?}: url must be http(s)", app.name);
             }
+            for ext in &mut app.open_downloads {
+                let normalized = ext.trim().trim_start_matches('.').to_lowercase();
+                if normalized.is_empty() || normalized.contains(['/', '\\', '*']) {
+                    bail!(
+                        "app {:?}: open_downloads entry {ext:?} must be a file extension, \
+                         such as \"ica\"",
+                        app.name
+                    );
+                }
+                *ext = normalized;
+            }
             if app.allowed_hosts.is_empty() {
                 if let Some(host) = app.url.host_str() {
                     app.allowed_hosts.push(host.to_owned());
@@ -262,6 +278,14 @@ impl Config {
 }
 
 impl AppConfig {
+    /// A download named `file_name` is opened without the save dialog (`open_downloads`).
+    pub fn opens_download(&self, file_name: &str) -> bool {
+        let name = file_name.to_lowercase();
+        self.open_downloads
+            .iter()
+            .any(|ext| name.len() > ext.len() + 1 && name.ends_with(&format!(".{ext}")))
+    }
+
     pub fn is_host_allowed(&self, host: &str) -> bool {
         self.allowed_hosts.iter().any(|pattern| {
             // `*.example.com` also covers the bare `example.com`.
@@ -371,6 +395,27 @@ mod tests {
             name = "a"
             url = "file:///etc/passwd""#;
         assert!(Config::parse(text).is_err());
+    }
+
+    #[test]
+    fn open_downloads_extensions() {
+        let text = "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = [\"ICA\", \".tar.gz\"]";
+        let config = Config::parse(text).unwrap();
+        let app = &config.apps[0];
+        assert_eq!(app.open_downloads, ["ica", "tar.gz"]);
+        assert!(app.opens_download("launch.ica"));
+        assert!(app.opens_download("Launch.ICA"));
+        assert!(app.opens_download("a.tar.gz"));
+        assert!(!app.opens_download("ica"));
+        assert!(!app.opens_download(".ica"));
+        assert!(!app.opens_download("launch.ica.txt"));
+        assert!(!app.opens_download("a.gz"));
+        for bad in ["", ".", "*.ica", "a/b"] {
+            let text = format!(
+                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = [{bad:?}]"
+            );
+            assert!(Config::parse(&text).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -10,8 +10,8 @@ Open any website as a standalone desktop webapp (Tauri 2) and inject your own Ja
 - Site favicon (or the `icon` of the config) as header and window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon.
 - Scripts and styles injected on every page load, filtered by URL wildcards.
 - Built-in editor for the config and its script/style files (TOML/JS/CSS highlighting).
-- Off-host links and popups open in the system browser.
-- File downloads with a native "save as" dialog (on Linux, shown once the download has finished).
+- Off-host links and popups open in the system browser, except downloads (checked by fetching the URL once, without cookies), which stay in the app.
+- File downloads with a native "save as" dialog and a downloads window (progress, cancel, open, show in folder).
 - Remote pages get no Tauri IPC access.
 
 ## Prerequisites
@@ -69,6 +69,7 @@ zoom = 1.25                        # optional, initial page zoom (0.3 to 3.0, de
 user_agent = "..."                 # optional
 icon = "gmail/icon.png"            # optional, header/window/taskbar/launcher icon (PNG, ICO, JPEG, GIF, WebP, BMP, SVG), default: site favicon
 allowed_hosts = ["*.google.com"]   # optional, default: host of url; `*.x` also matches `x`
+open_downloads = ["ica"]           # optional, file extensions opened with their default app once downloaded (no save dialog)
 styles = [{ path = "gmail/dark.css", matches = [] }]
 scripts = [
   { path = "gmail/main.js", run_at = "document-end", matches = ["https://mail.google.com/mail/*"] },
@@ -84,7 +85,7 @@ hide = ["zoom", "edit"]            # optional, header items not shown
 | --------- | ------ |
 | `run_at`  | `document-start` (before page scripts), `document-end` (DOMContentLoaded, default), `document-idle` (load) |
 | `matches` | Wildcards (`*`) on `location.href`, case-insensitive; empty = every page |
-| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `edit`, `devtools`, `external` (window controls always stay) |
+| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `downloads`, `edit`, `devtools`, `external` (window controls always stay) |
 
 Paths are relative to the config file. Files are read at startup: restart the app after editing.
 

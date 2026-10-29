@@ -93,6 +93,10 @@ const HEADER_ITEMS: &[ValueDoc] = &[
         doc: "The three zoom buttons (out, reset, in).",
     },
     ValueDoc {
+        value: "downloads",
+        doc: "Downloads button (shown once a file was downloaded).",
+    },
+    ValueDoc {
         value: "edit",
         doc: "Edit config button.",
     },
@@ -223,6 +227,16 @@ pub static SCHEMA: &[KeyDoc] = &[
         Some("the host of `url`"),
         "Host wildcards kept inside the window; links and popups to other hosts open in the \
          system browser. `*.example.com` also matches `example.com`.",
+        "[\"$0\"]",
+    ),
+    key(
+        "app",
+        "open_downloads",
+        "array of strings",
+        Some("[]"),
+        "File extensions (`ica`, `tar.gz`) of downloads opened with their default app once \
+         saved in the downloads folder, without the save dialog (e.g. Citrix `.ica` launch \
+         files). Only list types you trust from this site: they run without asking.",
         "[\"$0\"]",
     ),
     key(

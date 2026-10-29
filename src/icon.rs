@@ -26,7 +26,7 @@ const MAX_BYTES: u64 = 2 * 1024 * 1024;
 const SVG_SIZE: u32 = 128;
 /// Max size of the launcher icon cache (32 px avatars, HiDPI).
 const CACHE_SIZE: u32 = 64;
-const USER_AGENT: &str = "Mozilla/5.0 (compatible; WebOverlay)";
+pub const USER_AGENT: &str = "Mozilla/5.0 (compatible; WebOverlay)";
 #[cfg(windows)]
 const LAUNCHER_ID: &str = "dev.blet.weboverlay.launcher";
 
@@ -138,19 +138,22 @@ fn candidates(favicon: &str) -> Vec<String> {
     urls
 }
 
-fn fetch(url: &str, user_agent: &str) -> Option<Vec<u8>> {
-    if let Some(data) = url.strip_prefix("data:") {
-        return decode_data_url(data);
-    }
+/// HTTP client settings of the app's own requests (favicons, download probes).
+pub fn http_config() -> ureq::config::ConfigBuilder<ureq::typestate::AgentScope> {
     // OS certificate store: corporate TLS inspection roots are trusted there, not in webpki-roots.
     let tls = ureq::tls::TlsConfig::builder()
         .root_certs(ureq::tls::RootCerts::PlatformVerifier)
         .build();
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    ureq::Agent::config_builder()
         .tls_config(tls)
         .timeout_global(Some(Duration::from_secs(10)))
-        .build()
-        .into();
+}
+
+fn fetch(url: &str, user_agent: &str) -> Option<Vec<u8>> {
+    if let Some(data) = url.strip_prefix("data:") {
+        return decode_data_url(data);
+    }
+    let agent: ureq::Agent = http_config().build().into();
     let response = agent
         .get(url)
         .header("User-Agent", user_agent)

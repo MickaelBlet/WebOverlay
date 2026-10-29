@@ -9,6 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, Url, Webview};
 
 use crate::config::{HeaderConfig, HexColor, ZOOM_MAX, ZOOM_MIN};
+use crate::download;
 use crate::editor;
 use crate::icon;
 use crate::window::{self, AppWindow};
@@ -55,6 +56,8 @@ struct HeaderState<'a> {
     favicon: &'a str,
     zoom: f64,
     maximized: bool,
+    /// Shows the downloads button (once something was downloaded).
+    downloads: bool,
 }
 
 #[derive(Serialize)]
@@ -198,11 +201,20 @@ pub fn push_state(handle: &AppHandle, label: &str) {
             favicon: state.icon.as_deref().unwrap_or(&state.favicon),
             zoom: state.zoom,
             maximized,
+            downloads: download::started(),
         };
         let json = serde_json::to_string(&header_state).expect("state serializes");
         format!("window.weboverlay && window.weboverlay.update({json})")
     };
     let _ = header.eval(js);
+}
+
+/// `push_state` of every app window.
+pub fn push_all(handle: &AppHandle) {
+    let labels: Vec<String> = lock(handle).keys().cloned().collect();
+    for label in labels {
+        push_state(handle, &label);
+    }
 }
 
 /// Zoom level after a step in `direction` (-1, +1), clamped and rounded to the step.
@@ -264,6 +276,10 @@ pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
         }
         "edit" => {
             editor::open_later(handle);
+            Ok(())
+        }
+        "downloads" => {
+            download::open_later(handle);
             Ok(())
         }
         "minimize" => window.minimize(),

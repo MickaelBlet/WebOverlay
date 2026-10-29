@@ -35,6 +35,8 @@ gtk = "0.18"
 webkit2gtk = "2.0"
 
 [target.'cfg(windows)'.dependencies]
+# Download progress and cancel of the content webview (`download.rs`), same version as wry.
+webview2-com = "0.39"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell_PropertiesSystem", "Win32_Storage_EnhancedStorage", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]

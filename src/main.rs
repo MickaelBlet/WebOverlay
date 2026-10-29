@@ -190,6 +190,8 @@ fn main() -> ExitCode {
             launcher::launcher_forget_recent,
             launcher::launcher_forget,
             launcher::launcher_window,
+            download::downloads_list,
+            download::downloads_action,
         ])
         .setup(move |app| {
             match launch.mode {

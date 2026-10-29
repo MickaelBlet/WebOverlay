@@ -12,6 +12,7 @@ height = 700
 # user_agent = "Mozilla/5.0 ..."
 # icon = "demo/icon.png"
 allowed_hosts = ["example.com", "*.example.com"]
+# open_downloads = ["ica"]
 styles = [{ path = "demo/style.css" }]
 scripts = [
   { path = "demo/early.js", run_at = "document-start" },
