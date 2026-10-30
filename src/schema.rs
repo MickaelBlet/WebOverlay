@@ -110,6 +110,29 @@ const HEADER_ITEMS: &[ValueDoc] = &[
     },
 ];
 
+const OPEN_DOWNLOADS: &[ValueDoc] = &[
+    ValueDoc {
+        value: "ica",
+        doc: "Citrix Workspace launch file.",
+    },
+    ValueDoc {
+        value: "rdp",
+        doc: "Remote Desktop connection file.",
+    },
+    ValueDoc {
+        value: "jnlp",
+        doc: "Java Web Start launch file.",
+    },
+    ValueDoc {
+        value: "vnc",
+        doc: "VNC viewer connection file.",
+    },
+    ValueDoc {
+        value: "pdf",
+        doc: "PDF document, opened in the default viewer.",
+    },
+];
+
 const BOOL: &[ValueDoc] = &[
     ValueDoc {
         value: "true",
@@ -229,16 +252,20 @@ pub static SCHEMA: &[KeyDoc] = &[
          system browser. `*.example.com` also matches `example.com`.",
         "[\"$0\"]",
     ),
-    key(
-        "app",
-        "open_downloads",
-        "array of strings",
-        Some("[]"),
-        "File extensions (`ica`, `tar.gz`) of downloads opened with their default app once \
-         saved in the downloads folder, without the save dialog (e.g. Citrix `.ica` launch \
-         files). Only list types you trust from this site: they run without asking.",
-        "[\"$0\"]",
-    ),
+    KeyDoc {
+        values: OPEN_DOWNLOADS,
+        ..key(
+            "app",
+            "open_downloads",
+            "array of strings",
+            Some("[]"),
+            "File extensions (`ica`, `tar.gz`) of downloads opened with their default app once \
+             saved in the downloads folder, without the save dialog (e.g. Citrix `.ica` launch \
+             files). Only list types you trust from this site: they run without asking. Any \
+             extension is accepted, the suggestions are common launch files.",
+            "[\"$0\"]",
+        )
+    },
     key(
         "app",
         "scripts",
@@ -420,6 +447,12 @@ mod tests {
         );
         let config = Config::parse(&text).unwrap();
         assert_eq!(config.apps[0].header.hide.len(), hide.len());
+        let open_downloads = values("open_downloads");
+        let text = format!(
+            "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = {open_downloads:?}"
+        );
+        let config = Config::parse(&text).unwrap();
+        assert_eq!(config.apps[0].open_downloads, open_downloads);
         for maximized in values("maximized") {
             let text =
                 format!("[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nmaximized = {maximized}");
