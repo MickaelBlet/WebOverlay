@@ -1,6 +1,6 @@
 // Text geometry (monospace, no wrap) and the decoration layer drawn under the highlighted text.
 
-import { $, text, state } from "./core.js";
+import { text, state, pane } from "./core.js";
 
 export const LINE_H = 20;
 export const PAD_T = 8;
@@ -11,7 +11,7 @@ let charW = 7.8;
 export function measure() {
   const probe = document.createElement("span");
   probe.textContent = "x".repeat(100);
-  $("hl").append(probe);
+  pane.hl.append(probe);
   charW = probe.getBoundingClientRect().width / 100 || charW;
   probe.remove();
   render();
@@ -64,7 +64,7 @@ function offsetAtCol(start, col, v) {
   return i;
 }
 
-/** Caret box of offset `pos` relative to the `#wrap` element (scroll applied). */
+/** Caret box of offset `pos` relative to the `.wrap` element (scroll applied). */
 export function posToXY(pos) {
   const { line, col } = lineCol(pos);
   return { x: PAD_L + col * charW - text.scrollLeft, y: PAD_T + line * LINE_H - text.scrollTop, h: LINE_H };
@@ -98,7 +98,7 @@ export function reveal(pos, center = false) {
   else if (left > text.scrollLeft + w - 2 * PAD_L) text.scrollLeft = left - (2 * w) / 3;
 }
 
-// ---- Decorations: named sets of ranges, drawn as boxes in `#deco` (under `#hl`). ----
+// ---- Decorations: named sets of ranges, drawn as boxes in `.deco` (under `.hl`). ----
 
 const sets = new Map(); // name -> { cls, ranges: [[start, end]] }
 const MAX_BOXES = 2000;
@@ -119,8 +119,9 @@ function queue() {
 
 export function render() {
   queued = false;
+  if (!pane) return;
   const v = text.value;
-  const inner = $("deco-in");
+  const inner = pane.decoIn;
   let html = "";
   let boxes = 0;
   for (const { cls, ranges } of sets.values()) {
@@ -146,17 +147,16 @@ export function render() {
 
 /** Keeps decorations, current line and gutter aligned with the textarea scroll. */
 export function scrolled() {
-  $("deco-in").style.transform = `translate(${-text.scrollLeft}px, ${-text.scrollTop}px)`;
-  $("hl").scrollTop = text.scrollTop;
-  $("hl").scrollLeft = text.scrollLeft;
-  $("gutter").scrollTop = text.scrollTop;
+  pane.decoIn.style.transform = `translate(${-text.scrollLeft}px, ${-text.scrollTop}px)`;
+  pane.hl.scrollTop = text.scrollTop;
+  pane.hl.scrollLeft = text.scrollLeft;
+  pane.gutter.scrollTop = text.scrollTop;
   const line = state.current && text.selectionStart === text.selectionEnd ? lineCol(text.selectionStart).line : -1;
-  const cur = $("curline");
+  const cur = pane.curline;
   cur.hidden = line < 0;
   cur.style.top = `${PAD_T + line * LINE_H - text.scrollTop}px`;
 }
 
-let gutterKey = "";
 /** Line numbers, the caret line and the error line marked. */
 export function renderGutter() {
   const v = text.value;
@@ -165,15 +165,15 @@ export function renderGutter() {
   const d = state.diagnostic;
   const err = d && d.start != null ? lineCol(d.start, v).line : -1;
   const key = `${lines}:${cur}:${err}`;
-  if (key === gutterKey) return;
-  gutterKey = key;
+  if (key === pane.gutterKey) return;
+  pane.gutterKey = key;
   let html = "";
   for (let i = 0; i < lines; i++) {
     const cls = i === err ? "err" : i === cur ? "cur" : "";
     html += (i ? "\n" : "") + (cls ? `<span class="${cls}">${i + 1}</span>` : i + 1);
   }
-  $("gutter").innerHTML = html;
-  $("gutter").scrollTop = text.scrollTop;
+  pane.gutter.innerHTML = html;
+  pane.gutter.scrollTop = text.scrollTop;
 }
 
 // ---- Bracket matching ----

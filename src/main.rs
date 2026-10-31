@@ -165,6 +165,7 @@ fn main() -> ExitCode {
         .manage(editor::Editor {
             config_path: launch.config_path,
             maximized: launch.maximized,
+            dirty: Default::default(),
         })
         .invoke_handler(tauri::generate_handler![
             header::header_action,
@@ -175,6 +176,13 @@ fn main() -> ExitCode {
             editor::editor_schema,
             editor::editor_check,
             editor::editor_pin,
+            editor::editor_window,
+            editor::editor_dirty,
+            editor::editor_add,
+            editor::editor_unreference,
+            editor::editor_rename,
+            editor::editor_delete,
+            editor::editor_reveal,
             launcher::launcher_list,
             launcher::launcher_icon,
             launcher::launcher_open,

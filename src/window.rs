@@ -53,6 +53,24 @@ pub fn theme_color(window: &Window, (light, dark): (Color, Color)) -> Color {
     }
 }
 
+/// Window controls of the undecorated local windows (launcher, editor), whose page draws the
+/// title bar. Returns whether the window is maximized.
+pub fn window_action(window: &Window, action: &str) -> Result<bool, String> {
+    let result = match action {
+        "state" => Ok(()),
+        "minimize" => window.minimize(),
+        "toggle_maximize" => match window.is_maximized() {
+            Ok(true) => window.unmaximize(),
+            _ => window.maximize(),
+        },
+        "close" => window.close(),
+        "start_dragging" => window.start_dragging(),
+        _ => return Err(format!("unknown action {action:?}")),
+    };
+    result.map_err(|e| e.to_string())?;
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
 /// `on_page_load` handler for windows built with `.visible(false)`: shows them once their local
 /// page has loaded, so the webview's white background never flashes on screen.
 pub fn show_when_loaded(window: WebviewWindow, payload: tauri::webview::PageLoadPayload<'_>) {

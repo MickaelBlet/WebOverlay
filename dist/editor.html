@@ -29,6 +29,8 @@
     --widget: #ffffff;
     --match: rgba(234, 179, 8, 0.28);
     --match-cur: rgba(234, 179, 8, 0.55);
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+    --overlay: rgba(0, 0, 0, 0.25);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -56,6 +58,8 @@
       --widget: #1f2937;
       --match: rgba(234, 179, 8, 0.22);
       --match-cur: rgba(234, 179, 8, 0.45);
+      --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+      --overlay: rgba(0, 0, 0, 0.45);
       color-scheme: dark;
     }
   }
@@ -68,7 +72,7 @@
     color: var(--fg);
     font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  body { display: flex; }
+  body { display: flex; flex-direction: column; }
   button {
     height: 26px;
     padding: 0 12px;
@@ -83,19 +87,89 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
-  #pin.on { color: var(--accent); border-color: var(--accent); background: var(--active); }
 
-  #sidebar {
-    width: 240px;
+  svg.i { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* Title bar (undecorated window): empty areas move the window. */
+  #bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding-left: 10px;
     flex: none;
-    overflow-y: auto;
+    min-width: 0;
     background: var(--panel);
-    border-right: 1px solid var(--border);
-    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+  .brand { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 0 1 auto; font-size: 12px; }
+  .brand img, .brand svg { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+  .brand svg { color: var(--accent); }
+  #app-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #config-name { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #config-name::before { content: "—"; margin-right: 6px; }
+  .spacer { flex: 1 1 0; min-width: 8px; }
+  #center {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 420px;
+    min-width: 120px;
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #center:hover { border-color: var(--accent); background: var(--bg); }
+  #center .label { flex: 1; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  kbd { font: 11px ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace; color: var(--muted); padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .actions { display: flex; align-items: center; gap: 4px; flex: none; }
+  .actions button { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; font-size: 12px; }
+  .actions .tb { border-color: transparent; background: transparent; padding: 0 6px; }
+  .actions .tb:hover:not(:disabled) { background: var(--hover); }
+  #pin.on { color: var(--accent); background: var(--active); }
+  @media (max-width: 760px) { #config-name, .actions .btn-label { display: none; } }
+  @media (max-width: 600px) { #center .label, #center kbd { display: none; } #center { flex: 0 0 auto; min-width: 0; } }
+  .win { display: flex; flex: none; align-self: stretch; }
+  .win button { display: grid; place-items: center; width: 44px; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
+  .win button:hover:not(:disabled) { background: var(--hover); }
+  .win #close:hover { background: #dc2626; color: #fff; }
+  .win svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  #restore-icon { display: none; }
+  #bar.maximized #maximize-icon { display: none; }
+  #bar.maximized #restore-icon { display: block; }
+
+  #body { flex: 1; min-height: 0; display: flex; }
+
+  /* Sidebar */
+  #sidebar {
+    width: var(--side-w, 240px);
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--panel);
     user-select: none;
     -webkit-user-select: none;
   }
+  #sidebar[hidden] { display: none; }
+  .side-head { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 6px 0 14px; flex: none; }
+  .side-head .title { flex: 1; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+  .icon-btn, .opt { height: 22px; min-width: 22px; padding: 0 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; font: 12px system-ui, sans-serif; }
+  .side-head .icon-btn { display: grid; place-items: center; color: var(--muted); }
+  .side-head .icon-btn:hover { color: var(--fg); }
+  #file-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 8px; }
   .group-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 10px 14px 4px;
     color: var(--muted);
     font-size: 11px;
@@ -103,42 +177,102 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  .group-title .count { font-weight: 400; }
+  .group-title .add { display: grid; place-items: center; margin-left: auto; height: 18px; min-width: 18px; padding: 0; color: var(--muted); visibility: hidden; }
+  .group-title .add:hover { color: var(--fg); background: var(--hover); }
+  #sidebar:hover .group-title .add { visibility: visible; }
   .file {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 14px;
+    gap: 7px;
+    height: 24px;
+    padding: 0 10px 0 14px;
     cursor: pointer;
     white-space: nowrap;
+    border-left: 2px solid transparent;
   }
   .file:hover { background: var(--hover); }
-  .file.current { background: var(--active); }
-  .file .name { overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
-  .file .badge { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; flex: none; }
+  .file.open .name { color: var(--fg); }
+  .file.current { background: var(--active); border-left-color: var(--accent); }
+  .file .name { overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; color: var(--fg); }
+  .file .dir { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; flex: 0 100 auto; min-width: 0; }
+  .file .badge, .tab .badge { font-size: 10px; color: var(--dirty); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; flex: none; line-height: 14px; }
   .file .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dirty); flex: none; visibility: hidden; margin-left: auto; }
   .file.dirty .dot { visibility: visible; }
+  .ft { width: 16px; flex: none; text-align: center; font: 700 9px/16px ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace; border-radius: 3px; }
+  .ft-toml { color: var(--sec); }
+  .ft-js { color: var(--num); }
+  .ft-css { color: var(--key); }
+  .side-empty { padding: 6px 14px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .side-empty a { color: var(--accent); cursor: pointer; }
+
+  .sash { flex: none; width: 1px; background: var(--border); position: relative; z-index: 5; }
+  .sash::after { content: ""; position: absolute; inset: 0 -3px; cursor: col-resize; }
+  .sash:hover, .sash.drag { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  #sidebar[hidden] + .sash { display: none; }
 
   #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  #toolbar {
+  #groups { flex: 1; min-height: 0; display: flex; }
+
+  /* Editor groups: tab strip + code */
+  .pane { flex: 1 1 0; min-width: 160px; display: flex; flex-direction: column; position: relative; }
+  .tabs {
+    display: flex;
+    flex: none;
+    height: 34px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 40px;
-    padding: 0 10px 0 14px;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel);
+    gap: 6px;
+    flex: none;
+    max-width: 220px;
+    padding: 0 6px 0 12px;
+    border-right: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+    position: relative;
   }
-  #path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); direction: rtl; text-align: left; }
+  .tab:hover { background: var(--hover); }
+  .tab.current { background: var(--bg); color: var(--fg); }
+  .tab.current::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--bg); }
+  .pane.active .tab.current::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--accent); }
+  .tab .name { overflow: hidden; text-overflow: ellipsis; }
+  .tab .x { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; visibility: hidden; }
+  .tab .x:hover { background: var(--hover); }
+  .tab:hover .x, .tab.current .x { visibility: visible; }
+  .tab.dirty .x { visibility: visible; }
+  .tab.dirty .x svg { display: none; }
+  .tab.dirty .x::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--dirty); }
+  .tab.dirty .x:hover svg { display: block; }
+  .tab.dirty .x:hover::before { display: none; }
+  .tab.drop-before { box-shadow: inset 2px 0 var(--accent); }
+  .tab.drop-after { box-shadow: inset -2px 0 var(--accent); }
+  .tabs.drop-end { box-shadow: inset -2px 0 var(--accent); }
+  .tab-fill { flex: 1; min-width: 20px; }
+  .tab-actions { display: flex; align-items: center; gap: 2px; padding: 0 6px; flex: none; position: sticky; right: 0; background: var(--panel); }
+  .tab-actions .icon-btn { display: grid; place-items: center; color: var(--muted); }
+  .tab-actions [hidden] { display: none; }
+  .tab-actions .icon-btn:hover { color: var(--fg); background: var(--hover); }
 
-  #code { flex: 1; min-height: 0; display: flex; position: relative; }
-  #gutter, #hl, #text {
+  .code { flex: 1; min-height: 0; display: flex; position: relative; }
+  .gutter, .hl, .text {
     margin: 0;
     font: 13px/20px ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace;
     tab-size: 2;
     -moz-tab-size: 2;
     white-space: pre;
   }
-  #gutter {
+  .gutter {
     flex: none;
     min-width: 48px;
     padding: 8px 10px 8px 12px;
@@ -150,25 +284,28 @@
     user-select: none;
     -webkit-user-select: none;
   }
-  #wrap { flex: 1; min-width: 0; position: relative; }
-  #hl, #text {
+  .wrap { flex: 1; min-width: 0; position: relative; }
+  .hl, .text {
     position: absolute;
     inset: 0;
     padding: 8px 12px 40px;
     border: 0;
     overflow: hidden;
   }
-  #hl { pointer-events: none; color: var(--fg); }
-  #curline { position: absolute; left: 0; right: 0; height: 20px; background: var(--curline); pointer-events: none; }
-  #deco { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-  #deco-in { position: absolute; left: 0; top: 0; }
-  #deco-in > div { position: absolute; height: 20px; }
+  .hl { pointer-events: none; color: var(--fg); }
+  .curline { position: absolute; left: 0; right: 0; height: 20px; background: var(--curline); pointer-events: none; }
+  .deco { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .deco-in { position: absolute; left: 0; top: 0; }
+  .deco-in > div { position: absolute; height: 20px; }
   .bracket { outline: 1px solid var(--muted); outline-offset: -1px; background: var(--hover); }
-  #gutter .cur { color: var(--fg); }
-  #gutter .err { color: var(--error); font-weight: 700; }
+  .gutter .cur { color: var(--fg); }
+  .pane:not(.active) .gutter .cur { color: inherit; }
+  /* Caret line and decorations (brackets, matches, errors) belong to the active group. */
+  .pane:not(.active) .curline, .pane:not(.active) .deco { display: none; }
+  .gutter .err { color: var(--error); font-weight: 700; }
   /* The UA stylesheet sets `code { font-family: monospace }`, which would differ from the textarea font. */
-  #hl code { font: inherit; }
-  #text {
+  .hl code { font: inherit; }
+  .text {
     overflow: auto;
     resize: none;
     outline: none;
@@ -176,8 +313,28 @@
     color: transparent;
     caret-color: var(--fg);
   }
-  #text::selection { background: var(--active); color: transparent; }
-  #text:disabled { cursor: default; }
+  .text::selection { background: var(--active); color: transparent; }
+  .text:disabled { cursor: default; }
+  .empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .empty[hidden] { display: none; }
+  .empty svg { width: 56px; height: 56px; color: var(--border); margin-bottom: 6px; }
+  .empty dl { display: grid; grid-template-columns: auto auto; gap: 8px 16px; margin: 0; }
+  .empty dt { text-align: right; }
+  .empty dd { margin: 0; }
+  .pane + .sash { margin: 0; }
 
   .com { color: var(--com); font-style: italic; }
   .str { color: var(--str); }
@@ -190,22 +347,27 @@
 
   #status {
     display: flex;
-    gap: 12px;
-    height: 26px;
-    padding: 0 14px;
+    gap: 4px;
+    height: 24px;
+    padding: 0 6px 0 14px;
+    flex: none;
     align-items: center;
     border-top: 1px solid var(--border);
     background: var(--panel);
     font-size: 12px;
+    user-select: none;
+    -webkit-user-select: none;
   }
   #message { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #message.error { color: var(--error); }
   #message.ok { color: var(--ok); }
   #message.warn { color: var(--dirty); }
-  #pos, #lang { color: var(--muted); flex: none; }
-  #problem { flex: 0 1 auto; max-width: 50%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--error); }
-  #problem.link { cursor: pointer; }
-  #problem.link:hover { text-decoration: underline; }
+  .st { flex: none; color: var(--muted); padding: 0 6px; height: 20px; line-height: 20px; border-radius: 4px; white-space: nowrap; }
+  .st.link { cursor: pointer; }
+  .st.link:hover { background: var(--hover); color: var(--fg); }
+  #problem { flex: 0 1 auto; max-width: 50%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--error); }
+  #problem.link:hover { color: var(--error); text-decoration: underline; }
+  #saved.dirty { color: var(--dirty); }
 
   .squiggle {
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.5l1.5-2 1.5 2 1.5-2 1.5 2' fill='none' stroke='%23ef4444' stroke-width='1'/%3E%3C/svg%3E") repeat-x left bottom;
@@ -221,7 +383,7 @@
     font-size: 12px;
   }
   #suggest { display: flex; align-items: flex-start; }
-  #suggest[hidden], #hover[hidden] { display: none; }
+  #suggest[hidden], #hover[hidden], #menu[hidden], #modal[hidden] { display: none; }
   #suggest-list {
     list-style: none;
     margin: 0;
@@ -264,7 +426,6 @@
   #find .field:focus-within { border-color: var(--accent); }
   #find input { flex: 1; min-width: 0; height: 24px; padding: 0 6px; border: 0; outline: none; background: transparent; color: inherit; font: inherit; }
   #find input.invalid { color: var(--error); }
-  .icon-btn, .opt { height: 22px; min-width: 22px; padding: 0 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; font: 12px system-ui, sans-serif; }
   .opt { color: var(--muted); }
   .opt.on { color: var(--accent); border-color: var(--accent); background: var(--active); }
   #find-mode { align-self: stretch; height: auto; transition: transform 0.1s; }
@@ -272,7 +433,7 @@
   #find-count { min-width: 64px; padding: 0 6px; color: var(--muted); white-space: nowrap; font-size: 12px; }
   #find-count.none { color: var(--error); }
 
-  #palette { position: fixed; top: 6px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); padding: 6px; }
+  #palette { position: fixed; top: 40px; left: 50%; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); padding: 6px; box-shadow: var(--shadow); z-index: 30; }
   #palette-input { width: 100%; height: 28px; padding: 0 8px; border: 1px solid var(--accent); border-radius: 4px; outline: none; background: var(--bg); color: inherit; font: inherit; }
   #palette-list { list-style: none; margin: 4px 0 0; padding: 0; max-height: 330px; overflow-y: auto; }
   #palette-list li { display: flex; gap: 12px; padding: 0 8px; line-height: 26px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
@@ -282,55 +443,170 @@
   #palette-list .label b { color: var(--accent); }
   #palette-list .detail { color: var(--muted); font-size: 12px; }
   .d-error + .d-title { border-top: 1px solid var(--border); padding-top: 6px; }
+
+  /* Context menu */
+  #menu { position: fixed; z-index: 40; min-width: 200px; padding: 4px; box-shadow: var(--shadow); user-select: none; -webkit-user-select: none; }
+  #menu .item { display: flex; align-items: center; gap: 16px; height: 26px; padding: 0 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  #menu .item .k { margin-left: auto; color: var(--muted); font-size: 11px; }
+  #menu .item:hover, #menu .item.sel { background: var(--active); }
+  #menu .item.danger { color: var(--error); }
+  #menu .item.disabled { opacity: 0.45; pointer-events: none; }
+  #menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+
+  /* Modal dialog */
+  #modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: start center; padding-top: 12vh; background: var(--overlay); }
+  #modal form { position: relative; width: min(440px, calc(100% - 32px)); padding: 16px 18px 14px; background: var(--widget); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+  #modal h2 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+  #modal p { margin: 0 0 10px; color: var(--muted); line-height: 1.45; word-break: break-word; }
+  #modal .fields { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; margin: 12px 0 4px; }
+  #modal label { color: var(--muted); font-size: 12px; }
+  #modal input, #modal select {
+    height: 28px;
+    min-width: 0;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+  }
+  #modal input:focus, #modal select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  #modal .hint { grid-column: 2; color: var(--muted); font-size: 11px; margin-top: -4px; }
+  #modal .error { color: var(--error); font-size: 12px; min-height: 16px; margin-top: 6px; }
+  #modal .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  #modal button.danger { background: var(--error); border-color: var(--error); color: #fff; }
 </style>
 </head>
 <body>
-  <nav id="sidebar"></nav>
-  <div id="main">
-    <div id="toolbar">
-      <span id="path"></span>
-      <button id="pin" title="Keep on Top">Pin</button>
-      <button id="save" class="primary" disabled title="Save (Ctrl+S)">Save</button>
-      <button id="restart" title="Restart WebOverlay with the saved config">Restart</button>
+  <header id="bar">
+    <span class="brand" title="">
+      <img id="app-icon" alt="" hidden>
+      <svg id="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="3" width="13" height="13" rx="2.5"/><rect x="8" y="8" width="13" height="13" rx="2.5" fill="currentColor" fill-opacity="0.2"/>
+      </svg>
+      <span id="app-name">WebOverlay</span>
+      <span id="config-name"></span>
+    </span>
+    <span class="spacer"></span>
+    <button id="center" title="Go to File, Commands (Ctrl+P, Ctrl+Shift+P)" tabindex="-1">
+      <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+      <span class="label">Search files and commands</span><kbd>Ctrl+P</kbd>
+    </button>
+    <span class="spacer"></span>
+    <div class="actions">
+      <button id="pin" class="tb" title="Keep on Top" aria-pressed="false" tabindex="-1">
+        <svg class="i" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 4 4H6l4-4z"/><path d="M12 14v6"/></svg>
+      </button>
+      <button id="restart" class="tb" title="Restart the app with the saved config" tabindex="-1">
+        <svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg><span class="btn-label">Restart</span>
+      </button>
+      <button id="save" class="primary" disabled title="Save (Ctrl+S)" tabindex="-1">
+        <svg class="i" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg><span class="btn-label">Save</span>
+      </button>
     </div>
-    <div id="code">
-      <pre id="gutter">1</pre>
-      <div id="wrap">
-        <div id="curline" hidden></div>
-        <div id="deco" aria-hidden="true"><div id="deco-in"></div></div>
-        <pre id="hl" aria-hidden="true"><code id="hl-code"></code></pre>
-        <textarea id="text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
-        <div id="suggest" class="widget" hidden><ul id="suggest-list"></ul><div id="suggest-doc" class="doc"></div></div>
-        <div id="hover" class="widget doc" hidden></div>
-        <div id="find" class="widget" hidden>
-          <button id="find-mode" class="icon-btn" title="Toggle Replace (Ctrl+H)">›</button>
-          <div class="rows">
-            <div class="row">
-              <span class="field">
-                <input id="find-input" placeholder="Find" spellcheck="false" autocomplete="off">
-                <button id="opt-case" class="opt" title="Match Case (Alt+C)">Aa</button>
-                <button id="opt-word" class="opt" title="Match Whole Word (Alt+W)"><u>ab</u></button>
-                <button id="opt-regex" class="opt" title="Use Regular Expression (Alt+R)">.*</button>
-              </span>
-              <span id="find-count"></span>
-              <button id="find-prev" class="icon-btn" title="Previous Match (Shift+Enter, Shift+F3)">↑</button>
-              <button id="find-next" class="icon-btn" title="Next Match (Enter, F3)">↓</button>
-              <button id="find-close" class="icon-btn" title="Close (Escape)">×</button>
-            </div>
-            <div id="replace-row" class="row" hidden>
-              <span class="field"><input id="replace-input" placeholder="Replace" spellcheck="false" autocomplete="off"></span>
-              <button id="replace-one" class="icon-btn" title="Replace (Enter)">⇥</button>
-              <button id="replace-all" class="icon-btn" title="Replace All (Ctrl+Alt+Enter)">⇶</button>
-            </div>
-          </div>
-        </div>
+    <div class="win">
+      <button data-win="minimize" title="Minimize" tabindex="-1">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+      </button>
+      <button data-win="toggle_maximize" title="Maximize" tabindex="-1">
+        <svg id="maximize-icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14"/></svg>
+        <svg id="restore-icon" viewBox="0 0 24 24"><rect x="5" y="8" width="11" height="11"/><path d="M8 8V5h11v11h-3"/></svg>
+      </button>
+      <button id="close" data-win="close" title="Close" tabindex="-1">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="body">
+    <nav id="sidebar">
+      <div class="side-head">
+        <span class="title">Files</span>
+        <button id="add-file" class="icon-btn" title="New Script or Style… (Ctrl+N)" tabindex="-1">
+          <svg class="i" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4M12 11v6M9 14h6"/></svg>
+        </button>
+        <button id="reveal-config" class="icon-btn" title="Reveal Config in File Manager" tabindex="-1">
+          <svg class="i" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></svg>
+        </button>
+        <button id="hide-sidebar" class="icon-btn" title="Hide Sidebar (Ctrl+B)" tabindex="-1">
+          <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+        </button>
+      </div>
+      <div id="file-list"></div>
+    </nav>
+    <div id="side-sash" class="sash"></div>
+    <div id="main">
+      <div id="groups"></div>
+      <div id="status">
+        <span id="message"></span>
+        <span id="problem" class="st" hidden></span>
+        <span id="saved" class="st"></span>
+        <span id="lang" class="st"></span>
+        <span id="pos" class="st link" title="Go to Line (Ctrl+G)"></span>
       </div>
     </div>
-    <div id="status">
-      <span id="message"></span>
-      <span id="problem" hidden></span>
-      <span id="lang"></span>
-      <span id="pos"></span>
+  </div>
+
+  <template id="pane-tpl">
+    <section class="pane">
+      <div class="tabs">
+        <div class="tab-fill"></div>
+        <div class="tab-actions">
+          <button class="icon-btn split" title="Split Editor Right (Ctrl+\)" tabindex="-1">
+            <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
+          </button>
+          <button class="icon-btn close-group" title="Close Group" tabindex="-1" hidden>
+            <svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="code">
+        <pre class="gutter">1</pre>
+        <div class="wrap">
+          <div class="curline" hidden></div>
+          <div class="deco" aria-hidden="true"><div class="deco-in"></div></div>
+          <pre class="hl" aria-hidden="true"><code></code></pre>
+          <textarea class="text" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
+        </div>
+        <div class="empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="13" height="13" rx="2.5"/><rect x="8" y="8" width="13" height="13" rx="2.5" fill="currentColor" fill-opacity="0.2"/>
+          </svg>
+          <dl>
+            <dt>Go to File</dt><dd><kbd>Ctrl+P</kbd></dd>
+            <dt>Show All Commands</dt><dd><kbd>Ctrl+Shift+P</kbd></dd>
+            <dt>New Script or Style</dt><dd><kbd>Ctrl+N</kbd></dd>
+            <dt>Toggle Sidebar</dt><dd><kbd>Ctrl+B</kbd></dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <div id="widgets" hidden>
+    <div id="suggest" class="widget" hidden><ul id="suggest-list"></ul><div id="suggest-doc" class="doc"></div></div>
+    <div id="hover" class="widget doc" hidden></div>
+    <div id="find" class="widget" hidden>
+      <button id="find-mode" class="icon-btn" title="Toggle Replace (Ctrl+H)">›</button>
+      <div class="rows">
+        <div class="row">
+          <span class="field">
+            <input id="find-input" placeholder="Find" spellcheck="false" autocomplete="off">
+            <button id="opt-case" class="opt" title="Match Case (Alt+C)">Aa</button>
+            <button id="opt-word" class="opt" title="Match Whole Word (Alt+W)"><u>ab</u></button>
+            <button id="opt-regex" class="opt" title="Use Regular Expression (Alt+R)">.*</button>
+          </span>
+          <span id="find-count"></span>
+          <button id="find-prev" class="icon-btn" title="Previous Match (Shift+Enter, Shift+F3)">↑</button>
+          <button id="find-next" class="icon-btn" title="Next Match (Enter, F3)">↓</button>
+          <button id="find-close" class="icon-btn" title="Close (Escape)">×</button>
+        </div>
+        <div id="replace-row" class="row" hidden>
+          <span class="field"><input id="replace-input" placeholder="Replace" spellcheck="false" autocomplete="off"></span>
+          <button id="replace-one" class="icon-btn" title="Replace (Enter)">⇥</button>
+          <button id="replace-all" class="icon-btn" title="Replace All (Ctrl+Alt+Enter)">⇶</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -338,6 +614,8 @@
     <input id="palette-input" spellcheck="false" autocomplete="off" placeholder="Search files by name (> commands, : line)">
     <ul id="palette-list"></ul>
   </div>
+  <div id="menu" class="widget" role="menu" hidden></div>
+  <div id="modal" hidden><form method="dialog" novalidate></form></div>
 
 <script type="module" src="editor/main.js"></script>
 </body>

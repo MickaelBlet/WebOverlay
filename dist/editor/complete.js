@@ -1,6 +1,6 @@
 // Suggest widget (completion list + documentation) and hover card; TOML via toml.js, JS/CSS here.
 
-import { $, text, state, currentLang, isConfig, fuzzy, markHits, escapeHtml, on } from "./core.js";
+import { $, text, state, pane, currentLang, isConfig, fuzzy, markHits, escapeHtml, on, onText } from "./core.js";
 import { posToXY, xyToPos, LINE_H } from "./view.js";
 import { replaceRange } from "./edit.js";
 import { register } from "./keymap.js";
@@ -179,7 +179,7 @@ function render() {
   box.hidden = false;
   // Below the caret, or above when there is no room.
   const { x, y } = posToXY(active.from);
-  const wrap = $("wrap").getBoundingClientRect();
+  const wrap = pane.wrap.getBoundingClientRect();
   const h = box.offsetHeight;
   const below = y + LINE_H + h <= wrap.height || y < h;
   box.style.top = `${below ? y + LINE_H : y - h}px`;
@@ -255,8 +255,8 @@ on("caret", () => {
 });
 on("scroll", () => active && render());
 on("open", close);
-text.addEventListener("blur", () => setTimeout(() => document.activeElement !== text && close(), 0));
-text.addEventListener("mousedown", close);
+onText("blur", () => setTimeout(() => document.activeElement !== text && close(), 0));
+onText("mousedown", close);
 $("suggest").addEventListener("mousedown", (e) => {
   e.preventDefault();
   const li = e.target.closest("li");
@@ -302,14 +302,14 @@ function showHover(pos) {
   box.innerHTML = info.html;
   box.hidden = false;
   const { x, y } = posToXY(info.start);
-  const wrap = $("wrap").getBoundingClientRect();
+  const wrap = pane.wrap.getBoundingClientRect();
   const h = box.offsetHeight;
   box.style.top = `${y - h - 2 >= 0 ? y - h - 2 : y + LINE_H + 2}px`;
   box.style.left = `${Math.max(0, Math.min(x, wrap.width - box.offsetWidth - 4))}px`;
   hoverAt = info;
 }
 
-text.addEventListener("mousemove", (e) => {
+onText("mousemove", (e) => {
   if (e.buttons) return;
   const pos = xyToPos(e.clientX, e.clientY);
   if (hoverAt && pos != null && pos >= hoverAt.start && pos < hoverAt.end) return;
@@ -320,7 +320,7 @@ text.addEventListener("mousemove", (e) => {
   }
   if (pos != null) hoverTimer = setTimeout(() => showHover(pos), 350);
 });
-text.addEventListener("mouseleave", hideHover);
+onText("mouseleave", hideHover);
 on("keydown", hideHover);
 on("scroll", hideHover);
 on("open", hideHover);

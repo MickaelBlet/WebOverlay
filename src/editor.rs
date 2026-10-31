@@ -4,10 +4,12 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
-use tauri::{AppHandle, Manager, State, Webview, WebviewUrl, WebviewWindowBuilder};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, State, Webview, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::config::Config;
 use crate::schema::{KeyDoc, SCHEMA};
@@ -21,11 +23,13 @@ pub struct Editor {
     pub config_path: PathBuf,
     /// `--maximized`, applied by Restart.
     pub maximized: bool,
+    /// The page has unsaved changes (`editor_dirty`): closing the window asks first.
+    pub dirty: AtomicBool,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-enum Kind {
+pub enum Kind {
     Config,
     Script,
     Style,
@@ -43,8 +47,18 @@ struct FileEntry {
 #[derive(Serialize)]
 pub struct Files {
     files: Vec<FileEntry>,
+    /// Name and title of the app of the saved config.
+    app: Option<AppInfo>,
     /// Why the saved config can't be parsed (only the config is listed then).
     error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AppInfo {
+    name: String,
+    title: Option<String>,
+    /// `data:` URL: the configured icon, else the last favicon seen by the app.
+    icon: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -74,10 +88,24 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
         WebviewWindowBuilder::new(handle, EDITOR_LABEL, WebviewUrl::App("editor.html".into()))
             .title(format!("WebOverlay — {}", config_path.display()))
             .inner_size(1000.0, 700.0)
+            .min_inner_size(520.0, 320.0)
+            .decorations(false)
+            // Else WebView2 swallows the HTML5 drag and drop of the tabs (Windows).
+            .disable_drag_drop_handler()
             .visible(false)
             .on_page_load(show_when_loaded)
             .build()?;
     let _ = window.set_background_color(Some(theme_color(&window.as_ref().window(), PAGE_BG)));
+    let handle = handle.clone();
+    let webview = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            if handle.state::<Editor>().dirty.load(Ordering::Relaxed) {
+                api.prevent_close();
+                let _ = webview.eval("window.editorCloseRequested?.()");
+            }
+        }
+    });
     icon::set_default_taskbar_icon(&window.as_ref().window());
     Ok(())
 }
@@ -103,13 +131,20 @@ fn files(config_path: &Path) -> Files {
     }];
     let text = match fs::read_to_string(config_path) {
         Ok(text) => text,
-        Err(_) => return Files { files, error: None },
+        Err(_) => {
+            return Files {
+                files,
+                app: None,
+                error: None,
+            }
+        }
     };
     let config = match Config::parse_at(&text, config_path) {
         Ok(config) => config,
         Err(e) => {
             return Files {
                 files,
+                app: None,
                 error: Some(format!("{e:#}")),
             }
         }
@@ -129,7 +164,20 @@ fn files(config_path: &Path) -> Files {
             }
         }
     }
-    Files { files, error: None }
+    let app = config.app.map(|app| AppInfo {
+        icon: app
+            .icon
+            .as_deref()
+            .and_then(icon::file_data_url)
+            .or_else(|| icon::cached(config_path, &app.name)),
+        name: app.name,
+        title: app.title,
+    });
+    Files {
+        files,
+        app,
+        error: None,
+    }
 }
 
 fn check_caller(webview: &Webview) -> Result<(), String> {
@@ -179,6 +227,321 @@ fn write_file(path: &Path, content: &str) -> Result<(), String> {
     fs::write(path, content).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
+// ---- Adding, renaming and removing script/style entries of the saved config ----
+
+impl Kind {
+    fn key(self) -> Result<&'static str, String> {
+        match self {
+            Kind::Script => Ok("scripts"),
+            Kind::Style => Ok("styles"),
+            Kind::Config => Err("the config is not a script or a style".into()),
+        }
+    }
+}
+
+/// Checks `rel` (as typed in the page) and returns it with `/` separators: a relative path
+/// under the config directory with the extension of `kind`.
+fn entry_path(kind: Kind, rel: &str) -> Result<String, String> {
+    let rel = rel.trim().replace('\\', "/");
+    let path = Path::new(&rel);
+    if rel.is_empty() || path.is_absolute() || rel.starts_with('/') {
+        return Err("give a path relative to the config directory".into());
+    }
+    if path
+        .components()
+        .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err("the path must stay in the config directory (no `..`)".into());
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let ok = match kind {
+        Kind::Script => matches!(ext.as_str(), "js" | "mjs" | "cjs"),
+        Kind::Style => ext == "css",
+        Kind::Config => false,
+    };
+    if !ok {
+        let want = if kind == Kind::Style { ".css" } else { ".js" };
+        return Err(format!("a {} file name ends with {want}", kind.key()?));
+    }
+    Ok(rel)
+}
+
+/// The `[app]` table of `doc`.
+fn app_table(doc: &mut DocumentMut) -> Result<&mut Table, String> {
+    doc.get_mut("app")
+        .and_then(Item::as_table_mut)
+        .ok_or_else(|| "the config has no [app] table: add one first".into())
+}
+
+/// Appends an entry to `app.<key>`, as an inline table (`key = [...]`) or a `[[app.<key>]]`
+/// table depending on the form already used.
+fn push_entry(doc: &mut DocumentMut, key: &str, entry: InlineTable) -> Result<(), String> {
+    let app = app_table(doc)?;
+    match app.get_mut(key) {
+        None => {
+            let mut array = Array::new();
+            array.push(entry);
+            app.insert(key, toml_edit::value(array));
+        }
+        Some(Item::ArrayOfTables(tables)) => tables.push(entry.into_table()),
+        Some(Item::Value(Value::Array(array))) => {
+            // A multi-line array keeps one entry per line.
+            let multiline = array.iter().any(|v| {
+                v.decor()
+                    .prefix()
+                    .is_some_and(|p| p.as_str().is_some_and(|p| p.contains('\n')))
+            });
+            array.push(entry);
+            if multiline {
+                let n = array.len();
+                let indent = array
+                    .get(0)
+                    .and_then(|v| v.decor().prefix())
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("\n  ")
+                    .to_owned();
+                if let Some(last) = array.get_mut(n - 1) {
+                    last.decor_mut().set_prefix(indent);
+                }
+                array.set_trailing_comma(true);
+                if !array.trailing().as_str().is_some_and(|t| t.contains('\n')) {
+                    array.set_trailing("\n");
+                }
+            }
+        }
+        Some(_) => return Err(format!("app.{key} is not a list")),
+    }
+    Ok(())
+}
+
+/// Calls `f` with the `path` value (relative, as written) of every entry of `app.scripts` and
+/// `app.styles`; `f` returns whether to keep the entry.
+fn retain_entries(
+    doc: &mut DocumentMut,
+    mut f: impl FnMut(&mut Value) -> bool,
+) -> Result<(), String> {
+    let app = app_table(doc)?;
+    for key in ["scripts", "styles"] {
+        match app.get_mut(key) {
+            Some(Item::ArrayOfTables(tables)) => {
+                let mut keep = Vec::new();
+                for t in tables.iter_mut() {
+                    keep.push(match t.get_mut("path").and_then(Item::as_value_mut) {
+                        Some(v) => f(v),
+                        None => true,
+                    });
+                }
+                let mut i = 0;
+                tables.retain(|_| {
+                    i += 1;
+                    keep[i - 1]
+                });
+                if tables.is_empty() {
+                    app.remove(key);
+                }
+            }
+            Some(Item::Value(Value::Array(array))) => {
+                let mut keep = Vec::new();
+                for v in array.iter_mut() {
+                    keep.push(
+                        match v.as_inline_table_mut().and_then(|t| t.get_mut("path")) {
+                            Some(v) => f(v),
+                            None => true,
+                        },
+                    );
+                }
+                let mut i = 0;
+                array.retain(|_| {
+                    i += 1;
+                    keep[i - 1]
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Whether the entry path value `v` (relative to `base`) designates `path`.
+fn designates(v: &Value, base: &Path, path: &Path) -> bool {
+    v.as_str().is_some_and(|s| base.join(s) == path)
+}
+
+/// Applies `f` to the saved config document, validates the result and writes it.
+fn edit_config(
+    config_path: &Path,
+    f: impl FnOnce(&mut DocumentMut, &Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
+    let mut doc: DocumentMut = text
+        .replace("\r\n", "\n")
+        .parse()
+        .map_err(|e| format!("invalid config: {e}"))?;
+    let base = config_path.parent().unwrap_or(Path::new("."));
+    f(&mut doc, base)?;
+    let out = doc.to_string();
+    Config::parse(&out).map_err(|e| format!("invalid config: {e:#}"))?;
+    write_file(config_path, &out)
+}
+
+/// The entry kind of `path` in the saved config (scripts and styles only).
+fn entry_kind(editor: &Editor, path: &Path) -> Result<Kind, String> {
+    match editable(editor, path)? {
+        Kind::Config => Err("the config itself cannot be changed this way".into()),
+        kind => Ok(kind),
+    }
+}
+
+/// Adds a script or style entry to the saved config and creates its file when missing.
+/// `path` is relative to the config directory. Returns the absolute path.
+fn add(
+    config_path: &Path,
+    kind: Kind,
+    path: &str,
+    run_at: Option<&str>,
+    matches: &[String],
+) -> Result<PathBuf, String> {
+    let rel = entry_path(kind, path)?;
+    let base = config_path.parent().unwrap_or(Path::new("."));
+    let full = base.join(&rel);
+    let key = kind.key()?;
+    edit_config(config_path, |doc, _| {
+        let mut entry = InlineTable::new();
+        entry.insert("path", rel.as_str().into());
+        if let Some(run_at) = run_at.filter(|r| kind == Kind::Script && *r != "document-end") {
+            entry.insert("run_at", run_at.into());
+        }
+        if !matches.is_empty() {
+            entry.insert("matches", matches.iter().collect::<Array>().into());
+        }
+        push_entry(doc, key, entry)
+    })?;
+    if !full.exists() {
+        write_file(&full, "")?;
+    }
+    Ok(full)
+}
+
+/// Removes the entries of `path` from the saved config (the file is kept).
+fn unreference(config_path: &Path, path: &Path) -> Result<(), String> {
+    edit_config(config_path, |doc, base| {
+        retain_entries(doc, |v| !designates(v, base, path))
+    })
+}
+
+/// Renames the file `path` to `new` (relative to the config directory) and its entries.
+fn rename(config_path: &Path, kind: Kind, path: &Path, new: &str) -> Result<PathBuf, String> {
+    let rel = entry_path(kind, new)?;
+    let base = config_path.parent().unwrap_or(Path::new("."));
+    let full = base.join(&rel);
+    if full == path {
+        return Ok(full);
+    }
+    if full.exists() {
+        return Err(format!("{} already exists", full.display()));
+    }
+    edit_config(config_path, |doc, base| {
+        retain_entries(doc, |v| {
+            if designates(v, base, path) {
+                let decor = v.decor().clone();
+                *v = rel.as_str().into();
+                *v.decor_mut() = decor;
+            }
+            true
+        })
+    })?;
+    if path.exists() {
+        if let Some(parent) = full.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        fs::rename(path, &full).map_err(|e| format!("cannot rename {}: {e}", path.display()))?;
+    }
+    Ok(full)
+}
+
+#[tauri::command]
+pub fn editor_add(
+    webview: Webview,
+    editor: State<'_, Editor>,
+    kind: Kind,
+    path: String,
+    run_at: Option<String>,
+    matches: Vec<String>,
+) -> Result<PathBuf, String> {
+    check_caller(&webview)?;
+    add(
+        &editor.config_path,
+        kind,
+        &path,
+        run_at.as_deref(),
+        &matches,
+    )
+}
+
+#[tauri::command]
+pub fn editor_unreference(
+    webview: Webview,
+    editor: State<'_, Editor>,
+    path: PathBuf,
+) -> Result<(), String> {
+    check_caller(&webview)?;
+    entry_kind(&editor, &path)?;
+    unreference(&editor.config_path, &path)
+}
+
+#[tauri::command]
+pub fn editor_rename(
+    webview: Webview,
+    editor: State<'_, Editor>,
+    path: PathBuf,
+    new_path: String,
+) -> Result<PathBuf, String> {
+    check_caller(&webview)?;
+    let kind = entry_kind(&editor, &path)?;
+    rename(&editor.config_path, kind, &path, &new_path)
+}
+
+/// Removes the entries of `path` and deletes the file.
+#[tauri::command]
+pub fn editor_delete(
+    webview: Webview,
+    editor: State<'_, Editor>,
+    path: PathBuf,
+) -> Result<(), String> {
+    check_caller(&webview)?;
+    entry_kind(&editor, &path)?;
+    unreference(&editor.config_path, &path)?;
+    match fs::remove_file(&path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(format!("cannot delete {}: {e}", path.display()))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Shows an editable file (or its directory when missing) in the file manager.
+#[tauri::command]
+pub fn editor_reveal(
+    webview: Webview,
+    editor: State<'_, Editor>,
+    path: PathBuf,
+) -> Result<(), String> {
+    check_caller(&webview)?;
+    editable(&editor, &path)?;
+    let target = if path.exists() {
+        path
+    } else {
+        path.parent().map(Path::to_path_buf).unwrap_or(path)
+    };
+    tauri_plugin_opener::reveal_item_in_dir(&target).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn editor_files(webview: Webview, editor: State<'_, Editor>) -> Result<Files, String> {
     check_caller(&webview)?;
@@ -226,6 +589,27 @@ pub fn editor_pin(webview: Webview, pinned: bool) -> Result<bool, String> {
         .set_always_on_top(pinned)
         .map_err(|e| e.to_string())?;
     Ok(pinned)
+}
+
+/// Window controls of the undecorated editor (its page draws the title bar); `force_close`
+/// closes it without asking. Returns whether the window is maximized.
+#[tauri::command]
+pub fn editor_window(webview: Webview, action: String) -> Result<bool, String> {
+    check_caller(&webview)?;
+    let window = webview.window();
+    if action == "force_close" {
+        window.destroy().map_err(|e| e.to_string())?;
+        return Ok(false);
+    }
+    window::window_action(&window, &action)
+}
+
+/// Whether the page has unsaved changes (closing the window then asks the page first).
+#[tauri::command]
+pub fn editor_dirty(webview: Webview, editor: State<'_, Editor>, dirty: bool) {
+    if check_caller(&webview).is_ok() {
+        editor.dirty.store(dirty, Ordering::Relaxed);
+    }
 }
 
 /// Validates an unsaved config text (live diagnostics); touches no file.
@@ -382,6 +766,101 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "x\r\ny\r\n");
         let missing = read_file(&dir.join("nope.js")).unwrap();
         assert!(!missing.exists);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    const APP: &str = "# my app\n[app]\nname = \"a\" # inline\nurl = \"https://a.com\"\n";
+
+    #[test]
+    fn adds_entries() {
+        let dir = temp_dir("add");
+        let config = dir.join("config.toml");
+        fs::write(&config, APP).unwrap();
+        let full = add(
+            &config,
+            Kind::Script,
+            "js\\main.js",
+            Some("document-idle"),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(full, dir.join("js/main.js"));
+        assert!(full.is_file());
+        add(&config, Kind::Style, "a.css", None, &["*://a.com/*".into()]).unwrap();
+        let text = fs::read_to_string(&config).unwrap();
+        assert!(
+            text.starts_with("# my app\n[app]\nname = \"a\" # inline\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"scripts = [{ path = "js/main.js", run_at = "document-idle" }]"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"styles = [{ path = "a.css", matches = ["*://a.com/*"] }]"#),
+            "{text}"
+        );
+        let list = files(&config);
+        assert_eq!(list.files.len(), 3);
+        assert_eq!(list.app.as_ref().unwrap().name, "a");
+
+        // Multi-line arrays get one entry per line; tables of arrays get a table.
+        fs::write(
+            &config,
+            format!("{APP}scripts = [\n  {{ path = \"x.js\" }},\n]\n\n[[app.styles]]\npath = \"x.css\"\n"),
+        )
+        .unwrap();
+        add(&config, Kind::Script, "y.js", None, &[]).unwrap();
+        add(&config, Kind::Style, "y.css", None, &[]).unwrap();
+        let text = fs::read_to_string(&config).unwrap();
+        assert!(
+            text.contains("scripts = [\n  { path = \"x.js\" },\n  { path = \"y.js\" },\n]"),
+            "{text}"
+        );
+        assert!(text.contains("[[app.styles]]\npath = \"y.css\""), "{text}");
+
+        for bad in ["../x.js", "a/../../x.js", "/x.js", "x.css", ""] {
+            assert!(add(&config, Kind::Script, bad, None, &[]).is_err(), "{bad}");
+        }
+        fs::write(&config, "").unwrap();
+        assert!(add(&config, Kind::Script, "x.js", None, &[])
+            .unwrap_err()
+            .contains("[app]"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn renames_and_unreferences() {
+        let dir = temp_dir("rename");
+        let config = dir.join("config.toml");
+        fs::write(
+            &config,
+            format!("{APP}scripts = [{{ path = \"a.js\" }}, {{ path = \"b.js\" }}]\n\n[[app.styles]]\npath = \"a.css\" # keep\n"),
+        )
+        .unwrap();
+        fs::write(dir.join("a.js"), "1").unwrap();
+        let new = rename(&config, Kind::Script, &dir.join("a.js"), "sub/c.js").unwrap();
+        assert_eq!(fs::read_to_string(new).unwrap(), "1");
+        assert!(!dir.join("a.js").exists());
+        fs::write(dir.join("b.js"), "").unwrap();
+        assert!(rename(&config, Kind::Script, &dir.join("sub/c.js"), "b.js").is_err());
+        rename(&config, Kind::Style, &dir.join("a.css"), "d.css").unwrap();
+        let text = fs::read_to_string(&config).unwrap();
+        assert!(
+            text.contains(r#"scripts = [{ path = "sub/c.js" }, { path = "b.js" }]"#),
+            "{text}"
+        );
+        assert!(text.contains("path = \"d.css\" # keep"), "{text}");
+
+        unreference(&config, &dir.join("b.js")).unwrap();
+        unreference(&config, &dir.join("d.css")).unwrap();
+        let text = fs::read_to_string(&config).unwrap();
+        assert!(
+            text.contains(r#"scripts = [{ path = "sub/c.js" }]"#),
+            "{text}"
+        );
+        assert!(!text.contains("styles"), "{text}");
+        assert!(dir.join("b.js").exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }

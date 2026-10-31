@@ -14,7 +14,7 @@ use tauri::{AppHandle, Webview, WebviewUrl, WebviewWindowBuilder};
 use crate::config::{self, AppConfig, Config};
 use crate::icon;
 use crate::inject;
-use crate::window::{show_when_loaded, theme_color, PAGE_BG};
+use crate::window::{self, show_when_loaded, theme_color, PAGE_BG};
 
 /// Contains `:`, so it can't clash with an app window label (`[A-Za-z0-9_-]+`).
 pub const LAUNCHER_LABEL: &str = "weboverlay:launcher";
@@ -468,20 +468,7 @@ pub fn launcher_forget(webview: Webview, config: PathBuf) -> Result<(), String> 
 #[tauri::command]
 pub fn launcher_window(webview: Webview, action: String) -> Result<bool, String> {
     check_caller(&webview)?;
-    let window = webview.window();
-    let result = match action.as_str() {
-        "state" => Ok(()),
-        "minimize" => window.minimize(),
-        "toggle_maximize" => match window.is_maximized() {
-            Ok(true) => window.unmaximize(),
-            _ => window.maximize(),
-        },
-        "close" => window.close(),
-        "start_dragging" => window.start_dragging(),
-        _ => return Err(format!("unknown action {action:?}")),
-    };
-    result.map_err(|e| e.to_string())?;
-    window.is_maximized().map_err(|e| e.to_string())
+    window::window_action(&webview.window(), &action)
 }
 
 /// Removes an app from the recent list.

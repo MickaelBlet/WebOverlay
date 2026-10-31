@@ -71,3 +71,14 @@ export const label = (keys) =>
         .join("+"),
     )
     .join(" ");
+
+/** Runs the command `id` (title bar buttons, menus). */
+export function runCommand(id) {
+  commands.find((c) => c.id === id)?.run();
+}
+
+/** Shortcut label of the command `id` (first binding), or "". */
+export const keysOf = (id) => {
+  const keys = commands.find((c) => c.id === id)?.keys;
+  return keys?.length ? label(keys[0]) : "";
+};
