@@ -10,7 +10,7 @@ mod launcher;
 mod schema;
 mod window;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -80,6 +80,9 @@ struct Launch {
     /// Empty unless `Mode::Apps`.
     apps: Vec<Arc<AppWindow>>,
     mode: Mode,
+    /// The apps given on the command line, and `--maximized`: what the editor's Restart reopens.
+    names: Vec<String>,
+    maximized: bool,
 }
 
 fn prepare() -> Result<Option<Launch>> {
@@ -96,6 +99,8 @@ fn prepare() -> Result<Option<Launch>> {
             config_path,
             apps: Vec::new(),
             mode: Mode::Launcher,
+            names: args.apps,
+            maximized: args.maximized,
         }));
     }
     if args.edit {
@@ -104,40 +109,58 @@ fn prepare() -> Result<Option<Launch>> {
             config_path,
             apps: Vec::new(),
             mode: Mode::Edit,
+            names: args.apps,
+            maximized: args.maximized,
         }));
     }
-    let mut config = Config::load(&config_path)?;
-
     if args.list {
-        for app in &config.apps {
+        for app in &Config::load(&config_path)?.apps {
             println!("{}\t{}", app.name, app.url);
         }
         return Ok(None);
     }
+    let apps = load_apps(&config_path, &args.apps, args.maximized)?;
+    launcher::record(&config_path, apps.iter().map(|app| &app.config));
+    Ok(Some(Launch {
+        config_path,
+        apps,
+        mode: Mode::Apps,
+        names: args.apps,
+        maximized: args.maximized,
+    }))
+}
 
-    for name in &args.apps {
+/// Loads the config and builds the windows of the apps `names` (all apps when empty).
+pub fn load_apps(
+    config_path: &Path,
+    names: &[String],
+    maximized: bool,
+) -> Result<Vec<Arc<AppWindow>>> {
+    let mut config = Config::load(config_path)?;
+    for name in names {
         if config.find(name).is_none() {
             bail!("unknown app {name:?} in {}", config_path.display());
         }
     }
-    if !args.apps.is_empty() {
-        config.apps.retain(|app| args.apps.contains(&app.name));
+    if !names.is_empty() {
+        config.apps.retain(|app| names.contains(&app.name));
     }
     if config.apps.is_empty() {
         bail!("no app defined in {}", config_path.display());
     }
 
     // Not `canonicalize`: it yields `\\?\` paths on Windows.
-    let absolute_config = std::path::absolute(&config_path).unwrap_or_else(|_| config_path.clone());
+    let absolute_config =
+        std::path::absolute(config_path).unwrap_or_else(|_| config_path.to_owned());
     let profiles = dirs::data_local_dir()
         .context("cannot determine the user data directory")?
         .join("weboverlay")
         .join("profiles");
-    let apps = config
+    config
         .apps
         .into_iter()
         .map(|mut app| {
-            app.maximized |= args.maximized;
+            app.maximized |= maximized;
             let scripts = inject::build_scripts(&app)?;
             let icon = icon::load_configured(&app)?;
             let profile_dir = profiles.join(&app.name);
@@ -149,13 +172,7 @@ fn prepare() -> Result<Option<Launch>> {
                 config_path: absolute_config.clone(),
             }))
         })
-        .collect::<Result<Vec<_>>>()?;
-    launcher::record(&config_path, apps.iter().map(|app| &app.config));
-    Ok(Some(Launch {
-        config_path,
-        apps,
-        mode: Mode::Apps,
-    }))
+        .collect()
 }
 
 fn main() -> ExitCode {
@@ -172,7 +189,8 @@ fn main() -> ExitCode {
         .manage(header::States::default())
         .manage(editor::Editor {
             config_path: launch.config_path,
-            relaunch_args: editor::strip_edit_flag(std::env::args_os().skip(1)),
+            apps: launch.names,
+            maximized: launch.maximized,
         })
         .invoke_handler(tauri::generate_handler![
             header::header_action,

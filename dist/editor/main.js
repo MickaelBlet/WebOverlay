@@ -175,12 +175,13 @@ async function restart() {
   const dirty = [...state.buffers.keys()].filter(isDirty);
   if (dirty.length && !restartArmed) {
     restartArmed = true;
-    setMessage(`Unsaved changes in ${dirty.map(baseName).join(", ")}: click Restart again to discard them.`, "warn");
+    setMessage(`Unsaved changes in ${dirty.map(baseName).join(", ")}: click Restart again to restart without them.`, "warn");
     return;
   }
   restartArmed = false;
   try {
     await invoke("editor_restart");
+    setMessage("Restarted.", "ok");
   } catch (e) {
     setMessage(String(e), "error");
   }

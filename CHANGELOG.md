@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Config editor: Restart reopens the app windows in place and keeps the editor open (it used to relaunch WebOverlay and close the editor).
 - The Linux AppImage is self-contained (WebKitGTK, GTK, Mesa and glibc bundled, built with quick-sharun on Arch Linux): it runs on distros without `webkit2gtk-4.1` or with an older glibc, such as RHEL/Rocky 8 (glibc 2.28).
 
 ### Fixed

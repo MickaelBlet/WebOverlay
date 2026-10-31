@@ -130,7 +130,7 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
   status bar shows it (click to jump there).
 - `config.toml` is validated before saving: an invalid config is refused with the error shown.
 - Files referenced by the config but missing are marked `new` and created on save.
-- Restart relaunches WebOverlay (without `--edit`) to apply the changes.
+- Restart reopens the app windows with the saved config; the editor stays open.
 
 | Keys | Action |
 | ---- | ------ |

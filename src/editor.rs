@@ -2,26 +2,26 @@
 //! it references. Only the local editor webview may call its commands, and only on those files.
 
 use std::collections::HashSet;
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, Webview, WebviewUrl, WebviewWindowBuilder};
 
-use crate::config::{self, Config};
-use crate::icon;
+use crate::config::Config;
 use crate::schema::{KeyDoc, SCHEMA};
 use crate::window::{show_when_loaded, theme_color, PAGE_BG};
+use crate::{icon, launcher, window};
 
 /// Contains `:`, so it can't clash with an app window label (`[A-Za-z0-9_-]+`).
 pub const EDITOR_LABEL: &str = "weboverlay:editor";
 
 pub struct Editor {
     pub config_path: PathBuf,
-    /// Command line for Restart: the current one without `--edit`.
-    pub relaunch_args: Vec<OsString>,
+    /// The apps Restart reopens (all when empty), and `--maximized`.
+    pub apps: Vec<String>,
+    pub maximized: bool,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -92,13 +92,6 @@ pub fn open_later(handle: &AppHandle) {
             eprintln!("weboverlay: cannot open the editor: {e}");
         }
     });
-}
-
-/// `args` (without the program name) minus `-e` / `--edit`.
-pub fn strip_edit_flag(args: impl IntoIterator<Item = OsString>) -> Vec<OsString> {
-    args.into_iter()
-        .filter(|arg| arg != "-e" && arg != "--edit")
-        .collect()
 }
 
 /// The config plus the scripts/styles of the config saved at `config_path`.
@@ -252,22 +245,38 @@ fn check(content: &str) -> Option<Diagnostic> {
     }
 }
 
-/// Relaunches the app (without `--edit`) and exits this instance.
+/// Reopens the app windows with the saved config, in this process: the editor stays open.
+/// Popups are closed too; the downloads window stays.
 #[tauri::command]
-pub fn editor_restart(
+pub async fn editor_restart(
     webview: Webview,
     editor: State<'_, Editor>,
     handle: AppHandle,
 ) -> Result<(), String> {
     check_caller(&webview)?;
-    // The new instance would exit silently on a config error: report it here instead.
-    Config::load(&editor.config_path).map_err(|e| format!("{e:#}"))?;
-    let exe = config::exe_path().ok_or("cannot determine the executable path")?;
-    Command::new(&exe)
-        .args(&editor.relaunch_args)
-        .spawn()
-        .map_err(|e| format!("cannot start {}: {e}", exe.display()))?;
-    handle.exit(0);
+    // Everything is checked before closing anything.
+    let apps = crate::load_apps(&editor.config_path, &editor.apps, editor.maximized)
+        .map_err(|e| format!("{e:#}"))?;
+    launcher::record(&editor.config_path, apps.iter().map(|app| &app.config));
+    let old: Vec<_> = handle
+        .windows()
+        .into_values()
+        .filter(|window| !window.label().starts_with("weboverlay:"))
+        .collect();
+    for window in &old {
+        let _ = window.destroy();
+    }
+    // The new windows reuse the labels: wait until the old ones are gone.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while old.iter().any(|w| handle.get_window(w.label()).is_some()) {
+        if Instant::now() > deadline {
+            return Err("the previous windows did not close".into());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    for app in apps {
+        window::open(&handle, app).map_err(|e| format!("{e:#}"))?;
+    }
     Ok(())
 }
 
@@ -280,12 +289,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn strips_edit_flag() {
-        let args = ["--edit", "-c", "a.toml", "-e", "demo"].map(OsString::from);
-        assert_eq!(strip_edit_flag(args), ["-c", "a.toml", "demo"]);
     }
 
     #[test]
