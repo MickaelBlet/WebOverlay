@@ -83,6 +83,7 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
+  #pin.on { color: var(--accent); border-color: var(--accent); background: var(--active); }
 
   #sidebar {
     width: 240px;
@@ -288,6 +289,7 @@
   <div id="main">
     <div id="toolbar">
       <span id="path"></span>
+      <button id="pin" title="Keep on Top">Pin</button>
       <button id="save" class="primary" disabled title="Save (Ctrl+S)">Save</button>
       <button id="restart" title="Restart WebOverlay with the saved config">Restart</button>
     </div>

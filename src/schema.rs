@@ -153,10 +153,10 @@ pub static SCHEMA: &[KeyDoc] = &[
         ..key(
             "root",
             "app",
-            "array of tables",
+            "table",
             None,
-            "One `[[app]]` table per app window.",
-            "[[app]]",
+            "The `[app]` table: the app window of this config (one app per config file).",
+            "[app]",
         )
     },
     KeyDoc {
@@ -166,9 +166,8 @@ pub static SCHEMA: &[KeyDoc] = &[
             "name",
             "string",
             None,
-            "App name, `[A-Za-z0-9_-]+`, unique in the config. Used on the command line \
-             (`weboverlay <name>`), in the window label and for the profile directory \
-             (cookies, storage).",
+            "App name, `[A-Za-z0-9_-]+`. Used in the window label and for the profile \
+             directory (cookies, storage): configs whose apps have the same name share it.",
             "\"$0\"",
         )
     },
@@ -400,14 +399,14 @@ mod tests {
     #[test]
     fn every_key_parses() {
         let text = format!(
-            "[[app]]\n{}\nscripts = [{{ {} }}]\nstyles = [{{ {} }}]\n[app.header]\n{}\n",
+            "[app]\n{}\nscripts = [{{ {} }}]\nstyles = [{{ {} }}]\n[app.header]\n{}\n",
             entries("app").join("\n"),
             entries("script").join(", "),
             entries("style").join(", "),
             entries("app.header").join("\n"),
         );
         let config = Config::parse(&text).unwrap_or_else(|e| panic!("{e:#}\n{text}"));
-        let app = &config.apps[0];
+        let app = config.app.as_ref().unwrap();
         assert_eq!(app.title.as_deref(), Some("a"));
         assert_eq!(app.scripts[0].matches, ["a"]);
         assert_eq!(app.styles.len(), 1);
@@ -416,7 +415,7 @@ mod tests {
         for key in ["scripts", "styles"] {
             let example = SCHEMA.iter().find(|k| k.key == key).unwrap().example;
             let text = format!(
-                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\n{key} = {}",
+                "[app]\nname = \"a\"\nurl = \"https://a.com\"\n{key} = {}",
                 example.replace("$0", "a.js")
             );
             Config::parse(&text).unwrap_or_else(|e| panic!("{key}: {e:#}"));
@@ -437,25 +436,24 @@ mod tests {
         };
         for run_at in values("run_at") {
             let text = format!(
-                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nscripts = [{{ path = \"a.js\", run_at = \"{run_at}\" }}]"
+                "[app]\nname = \"a\"\nurl = \"https://a.com\"\nscripts = [{{ path = \"a.js\", run_at = \"{run_at}\" }}]"
             );
             Config::parse(&text).unwrap_or_else(|e| panic!("{run_at}: {e:#}"));
         }
         let hide = values("hide");
-        let text = format!(
-            "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\n[app.header]\nhide = {hide:?}"
-        );
+        let text =
+            format!("[app]\nname = \"a\"\nurl = \"https://a.com\"\n[app.header]\nhide = {hide:?}");
         let config = Config::parse(&text).unwrap();
-        assert_eq!(config.apps[0].header.hide.len(), hide.len());
+        assert_eq!(config.app.as_ref().unwrap().header.hide.len(), hide.len());
         let open_downloads = values("open_downloads");
         let text = format!(
-            "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = {open_downloads:?}"
+            "[app]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = {open_downloads:?}"
         );
         let config = Config::parse(&text).unwrap();
-        assert_eq!(config.apps[0].open_downloads, open_downloads);
+        assert_eq!(config.app.as_ref().unwrap().open_downloads, open_downloads);
         for maximized in values("maximized") {
             let text =
-                format!("[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nmaximized = {maximized}");
+                format!("[app]\nname = \"a\"\nurl = \"https://a.com\"\nmaximized = {maximized}");
             Config::parse(&text).unwrap();
         }
     }

@@ -311,12 +311,11 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// Command run by a pinned taskbar button.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn relaunch_command(exe: &Path, app: &AppWindow) -> String {
-    // Windows paths cannot contain `"`, app names are `[A-Za-z0-9_-]+`.
+    // Windows paths cannot contain `"`.
     format!(
-        "\"{}\" --config \"{}\" {}",
+        "\"{}\" --config \"{}\"",
         exe.display(),
-        app.config_path.display(),
-        app.config.name
+        app.config_path.display()
     )
 }
 
@@ -732,9 +731,9 @@ mod tests {
     }
 
     fn app_window(config: &str, name: &str) -> AppWindow {
-        let toml = format!("[[app]]\nname = \"{name}\"\nurl = \"https://a.com\"");
+        let toml = format!("[app]\nname = \"{name}\"\nurl = \"https://a.com\"");
         AppWindow {
-            config: crate::config::Config::parse(&toml).unwrap().apps.remove(0),
+            config: crate::config::Config::parse(&toml).unwrap().app.unwrap(),
             scripts: Vec::new(),
             icon: None,
             profile_dir: PathBuf::new(),
@@ -760,7 +759,7 @@ mod tests {
                 Path::new("C:\\Program Files\\WebOverlay\\weboverlay.exe"),
                 &app
             ),
-            r#""C:\Program Files\WebOverlay\weboverlay.exe" --config "C:\My Configs\config.toml" mail"#
+            r#""C:\Program Files\WebOverlay\weboverlay.exe" --config "C:\My Configs\config.toml""#
         );
     }
 

@@ -260,7 +260,7 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .state { flex: none; margin-left: auto; color: var(--muted); font-size: 12px; }
+  .state { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
   .state.error { color: var(--error); }
   .path {
     margin: 4px 0 8px;
@@ -441,11 +441,11 @@
       });
     }
     for (const c of configs) {
-      for (const a of c.apps) {
-        const key = keyOf(c.path, a.name);
-        const item = { config: c.path, app: a.name, title: a.title, url: a.url, icon: a.icon, available: true, editable: true };
-        items.set(key, Object.assign(items.get(key) ?? { opened: null }, item));
-      }
+      const a = c.app;
+      if (!a) continue;
+      const key = keyOf(c.path, a.name);
+      const item = { config: c.path, app: a.name, title: a.title, url: a.url, icon: a.icon, available: true, editable: true };
+      items.set(key, Object.assign(items.get(key) ?? { opened: null }, item));
     }
     return [...items.values()];
   }
@@ -521,7 +521,7 @@
 
   function showMenu(item, tile, event) {
     const entries = [];
-    if (item.available) entries.push(["Open", () => run("launcher_open", { config: item.config, app: item.app }, item.title)]);
+    if (item.available) entries.push(["Open", () => run("launcher_open", { config: item.config }, item.title)]);
     if (item.editable) entries.push(["Edit config", () => run("launcher_edit", { config: item.config }, "the editor")]);
     if (item.opened != null) {
       entries.push(["Remove from recent", () => act("launcher_forget_recent", { config: item.config, app: item.app }), "danger"]);
@@ -563,7 +563,7 @@
     );
     tile.dataset.key = keyOf(item.config, item.app);
     tile.addEventListener("click", () =>
-      item.available ? run("launcher_open", { config: item.config, app: item.app }, item.title) : showMenu(item, tile),
+      item.available ? run("launcher_open", { config: item.config }, item.title) : showMenu(item, tile),
     );
     tile.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -583,14 +583,14 @@
       ? "No config yet"
       : c.error
         ? "Invalid"
-        : c.apps.length
-          ? `${c.apps.length} app${c.apps.length > 1 ? "s" : ""}`
+        : c.app
+          ? c.app.title
           : "No app";
     const actions = el("div", { className: "actions" });
-    if (c.apps.length) {
-      actions.append(button("Open all", () => {
+    if (c.app) {
+      actions.append(button("Open", () => {
         closePopover();
-        run("launcher_open", { config: c.path, app: null }, "all apps");
+        run("launcher_open", { config: c.path }, c.app.title);
       }));
     }
     actions.append(button(c.exists ? "Edit" : "Create", () => {
@@ -636,7 +636,7 @@
       "div",
       { className: "empty" },
       el("div", { className: "empty-title", textContent: "No apps yet" }),
-      el("p", { textContent: "Create a config file, or edit your user config, and add an [[app]] table." }),
+      el("p", { textContent: "Create a config file, or edit your user config, and add an [app] table." }),
       actions,
     );
   }

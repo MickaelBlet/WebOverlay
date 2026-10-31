@@ -187,6 +187,19 @@ async function restart() {
   }
 }
 
+let pinned = false;
+
+async function togglePin() {
+  try {
+    pinned = await invoke("editor_pin", { pinned: !pinned });
+    $("pin").classList.toggle("on", pinned);
+    $("pin").setAttribute("aria-pressed", pinned);
+    $("pin").title = pinned ? "Unpin (stop keeping on top)" : "Keep on Top";
+  } catch (e) {
+    setMessage(String(e), "error");
+  }
+}
+
 /** Ctrl+Tab: next file in most-recently-used order. */
 function cycleFile(dir) {
   const list = mru.filter((p) => fileOf(p)).concat(state.files.map((f) => f.path).filter((p) => !mru.includes(p)));
@@ -203,6 +216,7 @@ const E = (id, label, keys, run) => ({ id, label, keys, run, editor: true });
 register([
   { id: "save", label: "File: Save", keys: ["ctrl+s"], run: save },
   { id: "restart", label: "WebOverlay: Restart", run: restart },
+  { id: "pin", label: "View: Toggle Always on Top", run: togglePin },
   { id: "nextFile", label: "View: Open Next File", keys: ["ctrl+tab"], run: () => cycleFile(1) },
   { id: "prevFile", label: "View: Open Previous File", keys: ["ctrl+shift+tab"], run: () => cycleFile(-1) },
   E("comment", "Toggle Line Comment", ["ctrl+/"], edit.toggleLineComment),
@@ -276,6 +290,7 @@ new ResizeObserver(() => view.scrolled()).observe(text);
 on("openFile", openFile);
 $("save").addEventListener("click", save);
 $("restart").addEventListener("click", restart);
+$("pin").addEventListener("click", togglePin);
 
 document.fonts.ready.then(view.measure);
 view.measure();

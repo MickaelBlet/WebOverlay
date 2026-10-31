@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Config editor: a Pin button (and the `View: Toggle Always on Top` command) keeps the editor window above the other windows.
+
 ### Changed
 
+- **Breaking**: one app per config file. The config holds a single `[app]` table instead of the `[[app]]` list (an `[[app]]` config is refused with an explicit error: move each app into its own config file). The command line no longer takes app names (`weboverlay --config <path>` opens its app), the launcher's config menu shows the app with `Open` instead of `Open all`, and a pinned Windows taskbar app relaunches with `--config <path>` only (re-pin apps pinned with an older version).
 - Config editor: Restart reopens the app windows in place and keeps the editor open (it used to relaunch WebOverlay and close the editor).
 - The Linux AppImage is self-contained (WebKitGTK, GTK, Mesa and glibc bundled, built with quick-sharun on Arch Linux): it runs on distros without `webkit2gtk-4.1` or with an older glibc, such as RHEL/Rocky 8 (glibc 2.28).
 

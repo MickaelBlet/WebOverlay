@@ -4,7 +4,7 @@
 
 Open any website as a standalone desktop webapp (Tauri 2) and inject your own JavaScript and CSS into it.
 
-- One window per app, isolated profile (cookies, storage) per app.
+- One config file per app window, isolated profile (cookies, storage) per app.
 - Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, edit config, developer tools, open in browser, window controls.
   Shortcuts: Alt+←/→, F5 / Ctrl+R.
 - Site favicon (or the `icon` of the config) as header and window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon.
@@ -31,10 +31,10 @@ Windows: Rust (MSVC toolchain) and WebView2 (preinstalled on Windows 10/11).
 ## Usage
 
 ```sh
-cargo run -- --config examples/config.toml demo   # dev
+cargo run -- --config examples/config.toml        # dev
 scripts/check.sh                                  # fmt, clippy (Linux + Windows), tests in Docker
 scripts/build.sh                                  # release builds in Docker (see below)
-weboverlay [--config <path>] [--list] [--edit] [--maximized] [<app>...]  # no app = open all
+weboverlay [--config <path>] [--list] [--edit] [--maximized]  # open the app of the config
 weboverlay                                        # launcher
 ```
 
@@ -57,9 +57,11 @@ Profiles: `<local data dir>/weboverlay/profiles/<app>`.
 
 ## Config
 
+One config file = one app window (`[app]` table; a second app goes in another config file).
+
 ```toml
-[[app]]
-name = "gmail"                     # [A-Za-z0-9_-]+, used on the command line
+[app]
+name = "gmail"                     # [A-Za-z0-9_-]+, names the profile (configs with the same name share it)
 url = "https://mail.google.com"
 title = "Gmail"                    # optional, default: page title
 width = 1200                       # optional
@@ -91,15 +93,15 @@ Paths are relative to the config file. Files are read at startup: restart the ap
 
 ## Launcher
 
-`weboverlay` without app nor `--config` opens the launcher instead of the apps: one grid of app tiles:
+`weboverlay` without `--config` opens the launcher instead of an app: one grid of app tiles:
 the recent apps (the last 10 opened, from the launcher or the command line, stored in
-`<local data dir>/weboverlay/recent.json`) and the other apps of the local configs. Each app is listed once;
+`<local data dir>/weboverlay/recent.json`) and the apps of the other local configs. Each app is listed once;
 recent apps no longer in their config are greyed out. Tiles are sorted by name A→Z by default; the sort menu
 at the right of the status bar switches to Z→A or to recently opened first (recent apps newest first, then the config apps in
 config order), and the choice is remembered. The top bar (search, `Configs`, `New config…`) is the window's
 title bar: drag it to move the window, double click to maximize.
 
-One click starts the app in a new WebOverlay process (`--config <path> <app>`); the launcher stays open.
+One click starts the app in a new WebOverlay process (`--config <path>`); the launcher stays open.
 Tiles show the app `icon` from the config, else the app favicon: the last one seen by the app (cached as
 `<local data dir>/weboverlay/icons/<id>.png`), else the site's `/favicon.ico`, else a letter.
 
@@ -108,7 +110,7 @@ Tiles show the app `icon` from the config, else the app favicon: the last one se
 - **App menu** (`⋯` on hover, right click or the menu key): `Open`, `Edit config`, `Remove from recent`.
 - **Configs** menu in the header: **Folder config** (`config.toml` next to the executable, when present),
   **User config** (`<config dir>/weboverlay/config.toml`) and the configs created with `New config…`, with
-  their path, errors (the button shows how many configs are invalid), `Open all` and `Edit` (`Create` when missing).
+  their path, errors (the button shows how many configs are invalid), the app title, `Open` and `Edit` (`Create` when missing).
 - **New config…**: native "save as" dialog; the file is created from a commented example of every key unless it
   exists, then opened in the editor. These configs are stored in `<local data dir>/weboverlay/configs.json`;
   `Forget` removes one from the list (the file is kept).
@@ -120,8 +122,8 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
 
 - TOML/JS/CSS highlighting, line numbers, current line and matching bracket highlight.
 - VSCode shortcuts (below), auto-closed brackets and quotes, smart indentation.
-- Completion (`Ctrl+Space`, or while typing) with documentation: config keys of the current table (`[[app]]`,
-  `[app.header]`, `scripts`/`styles` items), their values (`run_at`, `hide`, booleans) and `[[app]]` /
+- Completion (`Ctrl+Space`, or while typing) with documentation: config keys of the current table (`[app]`,
+  `[app.header]`, `scripts`/`styles` items), their values (`run_at`, `hide`, booleans) and `[app]` /
   `[app.header]` headers; JS: keywords, words of the file and DOM members (`document.`, `window.`…);
   CSS: properties, values and `var(--x)`.
 - Hover a config key, value or header for its documentation (`Ctrl+K Ctrl+I` at the caret).
@@ -130,7 +132,8 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
   status bar shows it (click to jump there).
 - `config.toml` is validated before saving: an invalid config is refused with the error shown.
 - Files referenced by the config but missing are marked `new` and created on save.
-- Restart reopens the app windows with the saved config; the editor stays open.
+- Restart reopens the app window with the saved config; the editor stays open.
+- Pin keeps the editor above the other windows (also `View: Toggle Always on Top` in the command palette).
 
 | Keys | Action |
 | ---- | ------ |

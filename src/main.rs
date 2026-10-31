@@ -20,15 +20,15 @@ use crate::config::Config;
 use crate::window::AppWindow;
 
 const USAGE: &str = "\
-Usage: weboverlay [--config <path>] [--list] [--edit] [--maximized] [<app>...]
+Usage: weboverlay [--config <path>] [--list] [--edit] [--maximized]
 
-Opens the given apps from the config (all apps if none given). Without app nor --config,
-opens the launcher (recent apps and the apps of the local configs).
+Opens the app of the config (one app per config file). Without --config, opens the launcher
+(recent apps and the apps of the local configs).
 
 Options:
   -c, --config <path>  Config file (default: config.toml next to the executable,
                        else <config dir>/weboverlay/config.toml)
-  -l, --list           List configured apps and exit
+  -l, --list           Print the app of the config and exit
   -e, --edit           Open the config editor only (works with a missing or invalid config)
   -m, --maximized      Start the windows maximized (overrides the config)
   -h, --help           Show this help";
@@ -38,7 +38,6 @@ struct Args {
     list: bool,
     edit: bool,
     maximized: bool,
-    apps: Vec<String>,
 }
 
 fn parse_args() -> Result<Option<Args>> {
@@ -47,7 +46,6 @@ fn parse_args() -> Result<Option<Args>> {
         list: false,
         edit: false,
         maximized: false,
-        apps: Vec::new(),
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -63,7 +61,7 @@ fn parse_args() -> Result<Option<Args>> {
                 args.config = Some(it.next().context("--config needs a path")?.into());
             }
             flag if flag.starts_with('-') => bail!("unknown option {flag}\n\n{USAGE}"),
-            name => args.apps.push(name.to_owned()),
+            other => bail!("unexpected argument {other:?} (one app per config)\n\n{USAGE}"),
         }
     }
     Ok(Some(args))
@@ -77,11 +75,10 @@ enum Mode {
 
 struct Launch {
     config_path: PathBuf,
-    /// Empty unless `Mode::Apps`.
-    apps: Vec<Arc<AppWindow>>,
+    /// `None` unless `Mode::Apps`.
+    app: Option<Arc<AppWindow>>,
     mode: Mode,
-    /// The apps given on the command line, and `--maximized`: what the editor's Restart reopens.
-    names: Vec<String>,
+    /// `--maximized`, also applied by the editor's Restart.
     maximized: bool,
 }
 
@@ -89,7 +86,7 @@ fn prepare() -> Result<Option<Launch>> {
     let Some(args) = parse_args()? else {
         return Ok(None);
     };
-    let launcher = args.config.is_none() && args.apps.is_empty() && !args.edit && !args.list;
+    let launcher = args.config.is_none() && !args.edit && !args.list;
     let config_path = match args.config {
         Some(path) => path,
         None => config::default_path()?,
@@ -97,9 +94,8 @@ fn prepare() -> Result<Option<Launch>> {
     if launcher {
         return Ok(Some(Launch {
             config_path,
-            apps: Vec::new(),
+            app: None,
             mode: Mode::Launcher,
-            names: args.apps,
             maximized: args.maximized,
         }));
     }
@@ -107,47 +103,32 @@ fn prepare() -> Result<Option<Launch>> {
         // The config may be missing or invalid: that's what the editor is for.
         return Ok(Some(Launch {
             config_path,
-            apps: Vec::new(),
+            app: None,
             mode: Mode::Edit,
-            names: args.apps,
             maximized: args.maximized,
         }));
     }
     if args.list {
-        for app in &Config::load(&config_path)?.apps {
+        if let Some(app) = Config::load(&config_path)?.app {
             println!("{}\t{}", app.name, app.url);
         }
         return Ok(None);
     }
-    let apps = load_apps(&config_path, &args.apps, args.maximized)?;
-    launcher::record(&config_path, apps.iter().map(|app| &app.config));
+    let app = load_app(&config_path, args.maximized)?;
+    launcher::record(&config_path, &app.config);
     Ok(Some(Launch {
         config_path,
-        apps,
+        app: Some(app),
         mode: Mode::Apps,
-        names: args.apps,
         maximized: args.maximized,
     }))
 }
 
-/// Loads the config and builds the windows of the apps `names` (all apps when empty).
-pub fn load_apps(
-    config_path: &Path,
-    names: &[String],
-    maximized: bool,
-) -> Result<Vec<Arc<AppWindow>>> {
-    let mut config = Config::load(config_path)?;
-    for name in names {
-        if config.find(name).is_none() {
-            bail!("unknown app {name:?} in {}", config_path.display());
-        }
-    }
-    if !names.is_empty() {
-        config.apps.retain(|app| names.contains(&app.name));
-    }
-    if config.apps.is_empty() {
-        bail!("no app defined in {}", config_path.display());
-    }
+/// Loads the config and builds the window of its app.
+pub fn load_app(config_path: &Path, maximized: bool) -> Result<Arc<AppWindow>> {
+    let Some(mut app) = Config::load(config_path)?.app else {
+        bail!("no [app] defined in {}", config_path.display());
+    };
 
     // Not `canonicalize`: it yields `\\?\` paths on Windows.
     let absolute_config =
@@ -156,23 +137,17 @@ pub fn load_apps(
         .context("cannot determine the user data directory")?
         .join("weboverlay")
         .join("profiles");
-    config
-        .apps
-        .into_iter()
-        .map(|mut app| {
-            app.maximized |= maximized;
-            let scripts = inject::build_scripts(&app)?;
-            let icon = icon::load_configured(&app)?;
-            let profile_dir = profiles.join(&app.name);
-            Ok(Arc::new(AppWindow {
-                config: app,
-                scripts,
-                icon,
-                profile_dir,
-                config_path: absolute_config.clone(),
-            }))
-        })
-        .collect()
+    app.maximized |= maximized;
+    let scripts = inject::build_scripts(&app)?;
+    let icon = icon::load_configured(&app)?;
+    let profile_dir = profiles.join(&app.name);
+    Ok(Arc::new(AppWindow {
+        config: app,
+        scripts,
+        icon,
+        profile_dir,
+        config_path: absolute_config,
+    }))
 }
 
 fn main() -> ExitCode {
@@ -189,7 +164,6 @@ fn main() -> ExitCode {
         .manage(header::States::default())
         .manage(editor::Editor {
             config_path: launch.config_path,
-            apps: launch.names,
             maximized: launch.maximized,
         })
         .invoke_handler(tauri::generate_handler![
@@ -200,6 +174,7 @@ fn main() -> ExitCode {
             editor::editor_restart,
             editor::editor_schema,
             editor::editor_check,
+            editor::editor_pin,
             launcher::launcher_list,
             launcher::launcher_icon,
             launcher::launcher_open,
@@ -217,7 +192,7 @@ fn main() -> ExitCode {
                 Mode::Edit => editor::open(app.handle())?,
                 Mode::Launcher => launcher::open(app.handle())?,
             }
-            for window in launch.apps {
+            if let Some(window) = launch.app {
                 window::open(app.handle(), window)?;
             }
             Ok(())

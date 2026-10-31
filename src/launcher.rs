@@ -1,6 +1,5 @@
-//! Launcher window (`dist/launcher.html`), shown when started without app nor `--config`:
-//! recent apps plus the apps of the user, portable and added configs, each started in a new
-//! process. Only the launcher webview may call its commands, and only on the listed configs/apps.
+//! Launcher window (`dist/launcher.html`), shown when started without `--config`: recent
+//! apps plus the apps of the user, portable and added configs, each started in a new process. Only the launcher webview may call its commands, and only on the listed configs/apps.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -23,11 +22,11 @@ pub const LAUNCHER_LABEL: &str = "weboverlay:launcher";
 const RECENT_MAX: usize = 10;
 
 /// Content of a config created from the launcher.
-const NEW_CONFIG: &str = r##"# WebOverlay config: one [[app]] table per window. Script/style paths are relative to this file.
+const NEW_CONFIG: &str = r##"# WebOverlay config: one [app] window per file. Script/style paths are relative to this file.
 # Uncomment and adapt the example below; every key except `name` and `url` is optional.
 
-# [[app]]
-# name = "example"                    # [A-Za-z0-9_-]+, unique (window label, profile dir)
+# [app]
+# name = "example"                    # [A-Za-z0-9_-]+ (window label, profile dir)
 # url = "https://example.com/"        # start page
 # title = "Example"                   # window title (default: page title)
 # width = 1200                        # default 1200
@@ -93,7 +92,7 @@ struct ConfigEntry {
     path: PathBuf,
     exists: bool,
     error: Option<String>,
-    apps: Vec<AppEntry>,
+    app: Option<AppEntry>,
 }
 
 #[derive(Serialize)]
@@ -174,8 +173,8 @@ fn remove_recent(list: Vec<RecentEntry>, config: &Path, app: &str) -> Vec<Recent
         .collect()
 }
 
-/// Adds the opened apps to the recent list (errors are only logged).
-pub fn record<'a>(config_path: &Path, apps: impl IntoIterator<Item = &'a AppConfig>) {
+/// Adds the opened app to the recent list (errors are only logged).
+pub fn record(config_path: &Path, app: &AppConfig) {
     let Some(path) = recent_path() else {
         return;
     };
@@ -184,17 +183,14 @@ pub fn record<'a>(config_path: &Path, apps: impl IntoIterator<Item = &'a AppConf
     let opened = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    let new = apps
-        .into_iter()
-        .map(|app| RecentEntry {
-            config: config.clone(),
-            app: app.name.clone(),
-            title: app.title.clone().unwrap_or(app.name.clone()),
-            url: app.url.to_string(),
-            opened,
-        })
-        .collect();
-    let list = merge_recent(load_list(&path), new);
+    let new = RecentEntry {
+        config,
+        app: app.name.clone(),
+        title: app.title.clone().unwrap_or(app.name.clone()),
+        url: app.url.to_string(),
+        opened,
+    };
+    let list = merge_recent(load_list(&path), vec![new]);
     if let Err(e) = save_list(&path, &list) {
         eprintln!("weboverlay: {e}");
     }
@@ -206,24 +202,20 @@ fn config_entry(kind: &'static str, path: PathBuf) -> ConfigEntry {
         exists: path.is_file(),
         path,
         error: None,
-        apps: Vec::new(),
+        app: None,
     };
     if !entry.exists {
         return entry;
     }
     match Config::load(&entry.path) {
         Ok(config) => {
-            entry.apps = config
-                .apps
-                .into_iter()
-                .map(|app| AppEntry {
-                    title: app.title.unwrap_or(app.name.clone()),
-                    name: app.name,
-                    url: app.url.to_string(),
-                    icon: None,
-                    icon_path: app.icon,
-                })
-                .collect();
+            entry.app = config.app.map(|app| AppEntry {
+                title: app.title.unwrap_or(app.name.clone()),
+                name: app.name,
+                url: app.url.to_string(),
+                icon: None,
+                icon_path: app.icon,
+            });
         }
         Err(e) => entry.error = Some(format!("{e:#}")),
     }
@@ -273,7 +265,7 @@ fn sources() -> Sources {
 }
 
 impl Sources {
-    /// `app` of `config` is listed (any listed app of `config` when `app` is `None`).
+    /// The app of `config` is listed (and named `app` when given).
     fn lists(&self, config: &Path, app: Option<&str>) -> bool {
         let in_recent = self.recent.iter().any(|item| {
             item.available
@@ -283,9 +275,9 @@ impl Sources {
         let in_configs = self.configs.iter().any(|entry| {
             entry.path == config
                 && entry
-                    .apps
-                    .iter()
-                    .any(|a| app.is_none_or(|app| a.name == app))
+                    .app
+                    .as_ref()
+                    .is_some_and(|a| app.is_none_or(|app| a.name == app))
         });
         in_recent || in_configs
     }
@@ -304,7 +296,7 @@ impl Sources {
                 .or_else(|| icon::cached(&item.entry.config, &item.entry.app));
         }
         for entry in &mut self.configs {
-            for app in &mut entry.apps {
+            if let Some(app) = &mut entry.app {
                 app.icon = app
                     .icon_path
                     .as_deref()
@@ -373,32 +365,21 @@ pub async fn launcher_icon(
     .map_err(|e| e.to_string())?
 }
 
-/// Opens `app` of `config` (all its apps when `None`) in a new process.
+/// Opens the app of `config` in a new process.
 #[tauri::command]
-pub fn launcher_open(webview: Webview, config: PathBuf, app: Option<String>) -> Result<(), String> {
+pub fn launcher_open(webview: Webview, config: PathBuf) -> Result<(), String> {
     check_caller(&webview)?;
-    if !sources().lists(&config, app.as_deref()) {
-        return Err(format!(
-            "{} is not a listed app",
-            app.as_deref().unwrap_or("this")
-        ));
+    if !sources().lists(&config, None) {
+        return Err(format!("{} has no listed app", config.display()));
     }
     // The new instance would exit silently on these errors: report them here instead.
     let loaded = Config::load(&config).map_err(|e| format!("{e:#}"))?;
-    let opened: Vec<&AppConfig> = loaded
-        .apps
-        .iter()
-        .filter(|entry| app.as_ref().is_none_or(|app| &entry.name == app))
-        .collect();
-    for entry in &opened {
-        inject::build_scripts(entry).map_err(|e| format!("{e:#}"))?;
-        icon::load_configured(entry).map_err(|e| format!("{e:#}"))?;
-    }
+    let app = loaded.app.as_ref().ok_or("no [app] in this config")?;
+    inject::build_scripts(app).map_err(|e| format!("{e:#}"))?;
+    icon::load_configured(app).map_err(|e| format!("{e:#}"))?;
     // Recorded here too (not only by the new instance) so the launcher can refresh right away.
-    record(&config, opened);
-    let mut args = vec![OsString::from("--config"), config.into_os_string()];
-    args.extend(app.map(OsString::from));
-    spawn(args)
+    record(&config, app);
+    spawn(vec![OsString::from("--config"), config.into_os_string()])
 }
 
 fn spawn_editor(config: PathBuf) -> Result<(), String> {
@@ -580,7 +561,7 @@ mod tests {
         let list = add_config(vec!["a".into(), "b".into()], "b".into());
         assert_eq!(list, [PathBuf::from("b"), PathBuf::from("a")]);
         assert_eq!(add_config(Vec::new(), "c".into()), [PathBuf::from("c")]);
-        assert!(Config::parse(NEW_CONFIG).unwrap().apps.is_empty());
+        assert!(Config::parse(NEW_CONFIG).unwrap().app.is_none());
     }
 
     #[test]
@@ -591,7 +572,7 @@ mod tests {
             .map(|line| format!("{}\n", line.strip_prefix("# ").unwrap_or(line)))
             .collect();
         let config = Config::parse(&uncommented).unwrap();
-        let app = &config.apps[0];
+        let app = config.app.unwrap();
         assert_eq!(app.name, "example");
         assert_eq!(app.scripts.len(), 2);
         assert_eq!(app.styles.len(), 1);
@@ -604,11 +585,11 @@ mod tests {
         let good = dir.join("good.toml");
         fs::write(
             &good,
-            "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\ntitle = \"A\"",
+            "[app]\nname = \"a\"\nurl = \"https://a.com\"\ntitle = \"A\"",
         )
         .unwrap();
         let bad = dir.join("bad.toml");
-        fs::write(&bad, "[[app]]\nname = \"a b\"").unwrap();
+        fs::write(&bad, "[app]\nname = \"a b\"").unwrap();
         let missing = dir.join("missing.toml");
 
         let sources = sources_from(
@@ -626,7 +607,7 @@ mod tests {
         );
         let paths: Vec<_> = sources.configs.iter().map(|c| c.path.clone()).collect();
         assert_eq!(paths, [good.clone(), bad.clone()]);
-        assert_eq!(sources.configs[0].apps[0].title, "A");
+        assert_eq!(sources.configs[0].app.as_ref().unwrap().title, "A");
         assert!(sources.configs[1].error.is_some());
         assert!(sources.recent[0].available);
         assert!(!sources.recent[1].available);

@@ -6,7 +6,7 @@ const HEADER_RE = /^[ \t]*(\[\[?)[ \t]*([A-Za-z0-9_.-]*)[ \t]*\]\]?/gm;
 
 /** Schema table of a `[header]` / `[[header]]`. */
 function headerTable(double, name) {
-  if (double && name === "app") return "app";
+  if (!double && name === "app") return "app";
   if (!double && name === "app.header") return "app.header";
   if (double && name === "app.scripts") return "script";
   if (double && name === "app.styles") return "style";
@@ -158,22 +158,15 @@ function keyItem(k) {
   };
 }
 
-/** `[[app]]` / `[app.header]` snippets for a header line. */
+/** `[app]` / `[app.header]` snippets for a header line (each one only while missing). */
 function headerItems(v, pos) {
-  const app = docOf("root", "app");
-  const items = [
-    { label: "[[app]]", kind: KIND.table, detail: "app window", doc: app, insert: '[[app]]\nname = "$0"\nurl = "https://"' },
-  ];
-  // [app.header] only inside an app that has none yet.
-  const before = v.slice(0, pos);
-  const appAt = before.lastIndexOf("[[app]]");
-  if (appAt >= 0) {
-    const after = v.slice(appAt + 7);
-    const next = after.search(/^[ \t]*\[\[app\]\]/m);
-    const section = next < 0 ? after : after.slice(0, next);
-    if (!/^[ \t]*\[app\.header\]/m.test(section) && !/^[ \t]*header[ \t]*=/m.test(section)) {
-      items.push({ label: "[app.header]", kind: KIND.table, detail: "header options", doc: docOf("app", "header"), insert: "[app.header]\n$0" });
-    }
+  const items = [];
+  const appAt = v.search(/^[ \t]*\[app\][ \t]*(#.*)?$/m);
+  if (appAt < 0) {
+    const app = docOf("root", "app");
+    items.push({ label: "[app]", kind: KIND.table, detail: "app window", doc: app, insert: '[app]\nname = "$0"\nurl = "https://"' });
+  } else if (appAt < pos && !/^[ \t]*\[app\.header\]/m.test(v) && !/^[ \t]*header[ \t]*=/m.test(v)) {
+    items.push({ label: "[app.header]", kind: KIND.table, detail: "header options", doc: docOf("app", "header"), insert: "[app.header]\n$0" });
   }
   return items;
 }

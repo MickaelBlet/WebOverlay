@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -9,8 +8,29 @@ use url::Url;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    #[serde(default, rename = "app")]
-    pub apps: Vec<AppConfig>,
+    /// The `[app]` table: one app window per config file.
+    #[serde(default, deserialize_with = "single_app")]
+    pub app: Option<AppConfig>,
+}
+
+/// `[app]`, with a clear error for the former `[app]` list (keeps the TOML error span).
+fn single_app<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Option<AppConfig>, D::Error> {
+    struct Single;
+    impl<'de> serde::de::Visitor<'de> for Single {
+        type Value = Option<AppConfig>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("an [app] table")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+            AppConfig::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(Some)
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, _: A) -> Result<Self::Value, A::Error> {
+            Err(serde::de::Error::custom(
+                "one app per config: write [app] instead of [[app]], one config file per app",
+            ))
+        }
+    }
+    de.deserialize_any(Single)
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,7 +234,7 @@ impl Config {
     pub fn parse_at(text: &str, path: &Path) -> Result<Self> {
         let mut config = Self::parse(text)?;
         let base = path.parent().unwrap_or(Path::new("."));
-        for app in &mut config.apps {
+        if let Some(app) = &mut config.app {
             if let Some(icon) = &mut app.icon {
                 *icon = base.join(&*icon);
             }
@@ -230,8 +250,7 @@ impl Config {
 
     pub fn parse(text: &str) -> Result<Self> {
         let mut config: Self = toml::from_str(text)?;
-        let mut names = HashSet::new();
-        for app in &mut config.apps {
+        if let Some(app) = &mut config.app {
             if app.name.is_empty()
                 || !app
                     .name
@@ -239,9 +258,6 @@ impl Config {
                     .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
             {
                 bail!("app name {:?} must match [A-Za-z0-9_-]+", app.name);
-            }
-            if !names.insert(app.name.clone()) {
-                bail!("duplicate app name {:?}", app.name);
             }
             if !(ZOOM_MIN..=ZOOM_MAX).contains(&app.zoom) {
                 bail!(
@@ -272,8 +288,9 @@ impl Config {
         Ok(config)
     }
 
+    /// The app, if it is named `name`.
     pub fn find(&self, name: &str) -> Option<&AppConfig> {
-        self.apps.iter().find(|app| app.name == name)
+        self.app.as_ref().filter(|app| app.name == name)
     }
 }
 
@@ -326,7 +343,7 @@ mod tests {
     fn parses_full_app() {
         let config = Config::parse(
             r#"
-            [[app]]
+            [app]
             name = "demo"
             url = "https://example.com/"
             scripts = [{ path = "a.js", run_at = "document-start", matches = ["https://example.com/*"] }]
@@ -346,7 +363,7 @@ mod tests {
     fn resolves_paths_against_config_dir() {
         let config = Config::parse_at(
             r#"
-            [[app]]
+            [app]
             name = "demo"
             url = "https://example.com/"
             icon = "icons/demo.png"
@@ -361,29 +378,26 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_names_and_duplicates() {
-        let bad = r#"[[app]]
+    fn rejects_bad_names_and_app_lists() {
+        let bad = r#"[app]
             name = "a b"
             url = "https://example.com""#;
         assert!(Config::parse(bad).is_err());
-        let dup = r#"[[app]]
-            name = "a"
-            url = "https://example.com"
-            [[app]]
-            name = "a"
-            url = "https://example.org""#;
-        assert!(Config::parse(dup).is_err());
+        let list = "[[app]]\nname = \"a\"\nurl = \"https://a.com\"";
+        let error = format!("{:#}", Config::parse(list).unwrap_err());
+        assert!(error.contains("one app per config"), "{error}");
+        assert!(Config::parse("").unwrap().app.is_none());
     }
 
     #[test]
     fn zoom_range() {
         let app = |zoom: &str| {
             Config::parse(&format!(
-                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nzoom = {zoom}"
+                "[app]\nname = \"a\"\nurl = \"https://a.com\"\nzoom = {zoom}"
             ))
         };
-        assert_eq!(app("1.25").unwrap().apps[0].zoom, 1.25);
-        assert_eq!(app("2").unwrap().apps[0].zoom, 2.0);
+        assert_eq!(app("1.25").unwrap().app.unwrap().zoom, 1.25);
+        assert_eq!(app("2").unwrap().app.unwrap().zoom, 2.0);
         assert!(app("0.1").is_err());
         assert!(app("5.0").is_err());
         assert!(app("nan").is_err());
@@ -391,7 +405,7 @@ mod tests {
 
     #[test]
     fn rejects_non_http_url() {
-        let text = r#"[[app]]
+        let text = r#"[app]
             name = "a"
             url = "file:///etc/passwd""#;
         assert!(Config::parse(text).is_err());
@@ -399,9 +413,10 @@ mod tests {
 
     #[test]
     fn open_downloads_extensions() {
-        let text = "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = [\"ICA\", \".tar.gz\"]";
+        let text =
+            "[app]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = [\"ICA\", \".tar.gz\"]";
         let config = Config::parse(text).unwrap();
-        let app = &config.apps[0];
+        let app = config.app.as_ref().unwrap();
         assert_eq!(app.open_downloads, ["ica", "tar.gz"]);
         assert!(app.opens_download("launch.ica"));
         assert!(app.opens_download("Launch.ICA"));
@@ -411,9 +426,8 @@ mod tests {
         assert!(!app.opens_download("launch.ica.txt"));
         assert!(!app.opens_download("a.gz"));
         for bad in ["", ".", "*.ica", "a/b"] {
-            let text = format!(
-                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = [{bad:?}]"
-            );
+            let text =
+                format!("[app]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = [{bad:?}]");
             assert!(Config::parse(&text).is_err(), "{bad}");
         }
     }
@@ -421,7 +435,7 @@ mod tests {
     #[test]
     fn parses_header() {
         let config = Config::parse(
-            r##"[[app]]
+            r##"[app]
             name = "a"
             url = "https://a.com"
             [app.header]
@@ -430,7 +444,7 @@ mod tests {
             hide = ["zoom", "edit"]"##,
         )
         .unwrap();
-        let header = &config.apps[0].header;
+        let header = &config.app.as_ref().unwrap().header;
         assert_eq!(header.color, Some(HexColor(0x1e, 0x3a, 0x8a)));
         assert_eq!(header.text_color, Some(HexColor(255, 255, 255)));
         assert_eq!(header.hide, [HeaderItem::Zoom, HeaderItem::Edit]);
@@ -438,12 +452,11 @@ mod tests {
         assert!(!HexColor(0xf3, 0xf4, 0xf6).is_dark());
         for bad in ["red", "#12", "#12345g", "123456", "#+1+2+3"] {
             let text = format!(
-                "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nheader = {{ color = \"{bad}\" }}"
+                "[app]\nname = \"a\"\nurl = \"https://a.com\"\nheader = {{ color = \"{bad}\" }}"
             );
             assert!(Config::parse(&text).is_err(), "{bad}");
         }
-        let text =
-            "[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nheader = { hide = [\"close\"] }";
+        let text = "[app]\nname = \"a\"\nurl = \"https://a.com\"\nheader = { hide = [\"close\"] }";
         assert!(Config::parse(text).is_err());
     }
 
@@ -463,13 +476,13 @@ mod tests {
     #[test]
     fn host_allowed_includes_bare_domain() {
         let config = Config::parse(
-            r#"[[app]]
+            r#"[app]
             name = "a"
             url = "https://mail.google.com"
             allowed_hosts = ["*.google.com"]"#,
         )
         .unwrap();
-        let app = &config.apps[0];
+        let app = config.app.as_ref().unwrap();
         assert!(app.is_host_allowed("google.com"));
         assert!(app.is_host_allowed("accounts.google.com"));
         assert!(!app.is_host_allowed("evilgoogle.com"));

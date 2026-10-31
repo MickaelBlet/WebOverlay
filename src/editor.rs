@@ -19,8 +19,7 @@ pub const EDITOR_LABEL: &str = "weboverlay:editor";
 
 pub struct Editor {
     pub config_path: PathBuf,
-    /// The apps Restart reopens (all when empty), and `--maximized`.
-    pub apps: Vec<String>,
+    /// `--maximized`, applied by Restart.
     pub maximized: bool,
 }
 
@@ -36,7 +35,7 @@ enum Kind {
 struct FileEntry {
     path: PathBuf,
     kind: Kind,
-    /// App using the file (first one when shared), empty for the config.
+    /// App using the file, empty for the config.
     app: String,
     exists: bool,
 }
@@ -116,7 +115,7 @@ fn files(config_path: &Path) -> Files {
         }
     };
     let mut seen: HashSet<PathBuf> = HashSet::from([config_path.to_owned()]);
-    for app in &config.apps {
+    if let Some(app) = &config.app {
         let scripts = app.scripts.iter().map(|s| (&s.path, Kind::Script));
         let styles = app.styles.iter().map(|s| (&s.path, Kind::Style));
         for (path, kind) in scripts.chain(styles) {
@@ -218,6 +217,17 @@ pub fn editor_schema(webview: Webview) -> Result<&'static [KeyDoc], String> {
     Ok(SCHEMA)
 }
 
+/// Keeps the editor window above the other windows (`pinned`) or not; returns the new state.
+#[tauri::command]
+pub fn editor_pin(webview: Webview, pinned: bool) -> Result<bool, String> {
+    check_caller(&webview)?;
+    webview
+        .window()
+        .set_always_on_top(pinned)
+        .map_err(|e| e.to_string())?;
+    Ok(pinned)
+}
+
 /// Validates an unsaved config text (live diagnostics); touches no file.
 #[tauri::command]
 pub fn editor_check(webview: Webview, content: String) -> Result<Option<Diagnostic>, String> {
@@ -245,7 +255,7 @@ fn check(content: &str) -> Option<Diagnostic> {
     }
 }
 
-/// Reopens the app windows with the saved config, in this process: the editor stays open.
+/// Reopens the app window with the saved config, in this process: the editor stays open.
 /// Popups are closed too; the downloads window stays.
 #[tauri::command]
 pub async fn editor_restart(
@@ -255,9 +265,9 @@ pub async fn editor_restart(
 ) -> Result<(), String> {
     check_caller(&webview)?;
     // Everything is checked before closing anything.
-    let apps = crate::load_apps(&editor.config_path, &editor.apps, editor.maximized)
-        .map_err(|e| format!("{e:#}"))?;
-    launcher::record(&editor.config_path, apps.iter().map(|app| &app.config));
+    let app =
+        crate::load_app(&editor.config_path, editor.maximized).map_err(|e| format!("{e:#}"))?;
+    launcher::record(&editor.config_path, &app.config);
     let old: Vec<_> = handle
         .windows()
         .into_values()
@@ -274,10 +284,7 @@ pub async fn editor_restart(
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    for app in apps {
-        window::open(&handle, app).map_err(|e| format!("{e:#}"))?;
-    }
-    Ok(())
+    window::open(&handle, app).map_err(|e| format!("{e:#}"))
 }
 
 #[cfg(test)]
@@ -298,14 +305,10 @@ mod tests {
         fs::write(
             &config,
             r#"
-            [[app]]
+            [app]
             name = "a"
             url = "https://a.com"
-            scripts = [{ path = "a/main.js" }]
-            styles = [{ path = "shared.css" }]
-            [[app]]
-            name = "b"
-            url = "https://b.com"
+            scripts = [{ path = "a/main.js" }, { path = "a/main.js", run_at = "document-idle" }]
             styles = [{ path = "shared.css" }]
             "#,
         )
@@ -327,7 +330,7 @@ mod tests {
         assert_eq!(list.files[2].app, "a");
         assert!(list.files[2].exists);
 
-        fs::write(&config, "[[app]]\nname = \"a b\"").unwrap();
+        fs::write(&config, "[app]\nname = \"a b\"").unwrap();
         let list = files(&config);
         assert!(list.error.is_some());
         assert_eq!(list.files.len(), 1);
@@ -346,17 +349,24 @@ mod tests {
 
     #[test]
     fn checks_config_text() {
-        let ok = "[[app]]\nname = \"a\"\nurl = \"https://a.com\"";
+        let ok = "[app]\nname = \"a\"\nurl = \"https://a.com\"";
         assert_eq!(check(ok), None);
         // "é" is 2 bytes but 1 UTF-16 unit.
-        let typo = "# é\n[[app]]\nname = \"a\"\nurl = \"https://a.com\"\nwidht = 1";
+        let typo = "# é\n[app]\nname = \"a\"\nurl = \"https://a.com\"\nwidht = 1";
         let d = check(typo).unwrap();
         assert!(d.message.contains("widht"), "{}", d.message);
         let at = typo.find("widht").unwrap() - 1;
         assert_eq!((d.start, d.end), (Some(at), Some(at + 5)));
-        let semantic = check("[[app]]\nname = \"a b\"\nurl = \"https://a.com\"").unwrap();
+        let semantic = check("[app]\nname = \"a b\"\nurl = \"https://a.com\"").unwrap();
         assert!(semantic.message.contains("must match"));
         assert_eq!(semantic.start, None);
+        let list = check("[[app]]\nname = \"a\"\nurl = \"https://a.com\"").unwrap();
+        assert!(
+            list.message.contains("one app per config"),
+            "{}",
+            list.message
+        );
+        assert!(list.start.is_some());
     }
 
     #[test]
