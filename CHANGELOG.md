@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Launcher: clicking an app or a config while the window is not focused acts at once (the click that focused the window used to be lost when the list refreshed).
 - Linux release builds no longer copy the packages of older versions left in the build cache into `dist-tauri/linux/`.
 
 ## [0.2.2] - 2026-10-30

@@ -665,14 +665,30 @@
     if (popover === configsPop) renderConfigs();
   }
 
+  // The click that focuses the window also triggers a refresh: rebuilding the grid between
+  // its mousedown and mouseup would drop the click, so it waits until the button is released.
+  let pressed = false;
+  let pending = false;
+
   async function refresh() {
     try {
       const { recent, configs } = await invoke("launcher_list");
       state = { items: collect(recent, configs), configs };
-      render();
+      if (pressed) pending = true;
+      else render();
     } catch (e) {
       setMessage(String(e), "error");
     }
+  }
+
+  document.addEventListener("pointerdown", () => (pressed = true), true);
+  for (const type of ["pointerup", "pointercancel"]) {
+    document.addEventListener(type, () => {
+      pressed = false;
+      if (!pending) return;
+      pending = false;
+      setTimeout(render);
+    }, true);
   }
 
   async function createConfig() {
