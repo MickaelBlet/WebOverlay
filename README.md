@@ -42,7 +42,7 @@ weboverlay                                        # launcher
 
 `scripts/build.sh` (`docker buildx bake`) builds both platforms in parallel from any Linux, only Docker (with buildx) required. `scripts/build.sh [--fast] [linux|windows]...` builds only the given platforms; `--fast` trades a slightly bigger binary for a much quicker rebuild (thin LTO):
 
-- `dist-tauri/linux/`: `.deb`, `.rpm`, `.AppImage`
+- `dist-tauri/linux/`: `.deb`, `.rpm` (glibc 2.35+ with `webkit2gtk-4.1`, e.g. Ubuntu 22.04, Debian 12), `.AppImage` (self-contained: bundles WebKitGTK, GTK and glibc, runs on older distros such as RHEL/Rocky 8)
 - `dist-tauri/windows/`: NSIS `*-setup.exe` and `WebOverlay-portable.exe` (cargo-xwin, MSVC target)
 
 Release Windows builds have no console: `--list`, `--help` and errors print nothing there.

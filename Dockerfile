@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Desktop builds, one stage per OS so BuildKit runs them in parallel:
-#   linux:   amd64 (deb, rpm, AppImage)
+#   linux:   amd64 (deb, rpm; AppImage repackaged in the `appimage` stage)
 #   windows: amd64 (NSIS installer + portable exe, cargo-xwin)
 #   check:   fmt, clippy (Linux + Windows), tests; no output
 # Usage: scripts/build.sh [--fast] [linux|windows]... (or `docker buildx bake [linux|windows]`),
@@ -8,7 +8,7 @@
 # Output: dist-tauri/{linux,windows}/
 # Base images and downloaded tools are pinned by digest or checksum: bump them on purpose.
 
-# Ubuntu 22.04: oldest base with webkit2gtk-4.1, keeps the AppImage glibc requirement low.
+# Ubuntu 22.04: oldest base with webkit2gtk-4.1, keeps the deb/rpm glibc requirement low (2.35).
 FROM ubuntu:22.04@sha256:5ec03bb3441e8b0bf3b4f9cd4629a1ae763010dc3035bb8da3ae6cf026486401 AS toolchain
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -60,8 +60,7 @@ RUN cd /tmp \
     && rm tauri.tgz xwin.tgz \
     && cargo tauri --version && cargo xwin --version
 
-# linuxdeploy (AppImage) is itself an AppImage: no FUSE inside containers.
-ENV APPIMAGE_EXTRACT_AND_RUN=1 XWIN_ACCEPT_LICENSE=1
+ENV XWIN_ACCEPT_LICENSE=1
 
 # Crates downloaded once, into a layer (rebuilt only when Cargo.toml/Cargo.lock change): each OS
 # build gets its own copy-on-write CARGO_HOME, so the concurrent builds don't race on unpack.
@@ -85,10 +84,44 @@ RUN --mount=type=cache,id=weboverlay-cache-linux,target=/root/.cache \
     --mount=type=cache,id=weboverlay-target-linux${FAST:+-fast},target=/app/target \
     set -eux; \
     [ -z "$FAST" ] || export CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16; \
-    cargo tauri build --bundles deb,rpm,appimage -- --locked; \
     b=target/release/bundle; \
-    mkdir -p /out; \
-    cp $b/deb/*.deb $b/rpm/*.rpm $b/appimage/*.AppImage /out/
+    rm -rf $b; \
+    cargo tauri build --bundles deb,rpm -- --locked; \
+    mkdir -p /out /appimage-src; \
+    cp $b/deb/*.deb $b/rpm/*.rpm /out/; \
+    dpkg-deb -x $b/deb/*.deb /appimage-src; \
+    dpkg-deb -f $b/deb/*.deb Version > /appimage-src/version
+
+# Self-contained AppImage: the binary plus Arch Linux's webkit2gtk-4.1, GTK, Mesa and glibc itself,
+# deployed by quick-sharun (sharun runs every bundled executable, WebKit's helper processes
+# included, through the bundled dynamic loader), so it runs on old distros without webkit2gtk-4.1
+# (RHEL/Rocky 8, glibc 2.28). Arch is quick-sharun's supported build host; the debloated
+# packages (`continuous` release) only exist for current Arch, so this stage tracks rolling Arch.
+FROM archlinux:latest@sha256:e82623936fa1a69700b48e98b058df6eaab18b737c27473a7234a40fdecb9413 AS appimage
+ARG ANYLINUX_COMMIT=bec22efd769b122f1fa9c89606a2d969498a5930
+ARG QUICK_SHARUN_SHA256=fa9dbe2532d568e1c1b8eeaba94d1c57109b776b5541d21b74d3f44b74faf4d3
+ARG DEBLOATED_PKGS_SHA256=c8880a7e2f0a47b68ed5ae34e1b7aeecc2e5b3a55f3583b0b43d9818a15dbe8b
+RUN pacman -Syu --noconfirm --needed \
+      webkit2gtk-4.1 gtk3 binutils file patchelf wget xorg-server-xvfb xorg-xauth \
+    && cd /usr/local/bin \
+    && u=https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/${ANYLINUX_COMMIT}/useful-tools \
+    && curl -fsSLo quick-sharun $u/quick-sharun.sh \
+    && curl -fsSLo get-debloated-pkgs $u/get-debloated-pkgs.sh \
+    && printf '%s  %s\n' ${QUICK_SHARUN_SHA256} quick-sharun ${DEBLOATED_PKGS_SHA256} get-debloated-pkgs \
+      | sha256sum -c - \
+    && chmod +x quick-sharun get-debloated-pkgs \
+    && get-debloated-pkgs --add-common --prefer-nano webkit2gtk-4.1-mini \
+    && pacman -Scc --noconfirm
+COPY --from=linux /appimage-src /appimage-src
+WORKDIR /appimage
+# STRACE_MODE (default) runs the app under Xvfb for a few seconds to collect dlopened libraries.
+RUN set -eux; \
+    cp -r /appimage-src/usr /; \
+    export VERSION=$(cat /appimage-src/version) OUTPUT_APPIMAGE=1 OUTPATH=/out \
+      DESKTOP=/usr/share/applications/WebOverlay.desktop \
+      ICON=/usr/share/icons/hicolor/512x512/apps/weboverlay.png; \
+    OUTNAME=WebOverlay_${VERSION}_amd64.AppImage quick-sharun /usr/bin/weboverlay; \
+    find /out -type f ! -name "*.AppImage" -delete
 
 FROM src AS windows
 ARG FAST=
@@ -114,6 +147,7 @@ RUN --mount=type=cache,id=weboverlay-cache-check,target=/root/.cache \
 
 FROM scratch AS linux-out
 COPY --from=linux /out /
+COPY --from=appimage /out /
 
 FROM scratch AS windows-out
 COPY --from=windows /out /

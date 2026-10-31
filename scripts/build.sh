@@ -2,7 +2,7 @@
 # Build the desktop app for Linux amd64 and/or Windows amd64 in Docker.
 # Usage: scripts/build.sh [--fast] [linux|windows]...   (default: both)
 #   --fast: thin LTO + 16 codegen units, faster rebuilds, slightly bigger binaries.
-# Output: dist-tauri/linux/{*.deb,*.rpm,*.AppImage}, dist-tauri/windows/{*-setup.exe,*-portable.exe}
+# Output: dist-tauri/linux/{*.deb,*.rpm,*.AppImage (self-contained, glibc bundled)}, dist-tauri/windows/{*-setup.exe,*-portable.exe}
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
