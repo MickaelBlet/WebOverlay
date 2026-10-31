@@ -203,7 +203,8 @@ document.addEventListener(
 /**
  * Shows a modal dialog; resolves with `{ button, values }` (`button` = the id of the clicked
  * button, `null` when dismissed). `buttons`: `[{ id, label, primary?, danger? }]` (the first
- * primary one is the default, Enter). `fields`: `[{ id, label, value, options?: [[value, label]],
+ * primary one is the default, Enter). `onInput(values, inputs, changedId)` runs on every edit
+ * (`changedId` null once at opening). `fields`: `[{ id, label, value, options?: [[value, label]],
  * hint?, placeholder?, selection?: [start, end] }]` (the first field gets the focus). `validate(values, form)` returns an error message or "".
  */
 export function modal({ title, body = "", fields = [], buttons, validate, onInput }) {
@@ -276,17 +277,20 @@ export function modal({ title, body = "", fields = [], buttons, validate, onInpu
       ),
     );
     if (onInput) {
-      for (const input of Object.values(inputs)) {
-        input.addEventListener("input", () => {
+      for (const [id, input] of Object.entries(inputs)) {
+        input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => {
           error.textContent = "";
-          onInput(values(), inputs);
+          onInput(values(), inputs, id);
         });
       }
     }
-    box.onmousedown = (e) => e.target === box && done(null);
+    // A block body: an `on…` handler returning false would cancel every click in the dialog.
+    box.onmousedown = (e) => {
+      if (e.target === box) done(null);
+    };
     box.hidden = false;
     document.addEventListener("keydown", onKey, true);
-    onInput?.(values(), inputs);
+    onInput?.(values(), inputs, null);
     const first = fields[0] && inputs[fields[0].id];
     if (first) {
       first.focus();

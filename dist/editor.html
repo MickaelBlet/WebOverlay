@@ -471,6 +471,7 @@
     font: inherit;
   }
   #modal input:focus, #modal select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  #modal input:disabled, #modal select:disabled { opacity: 0.5; }
   #modal .hint { grid-column: 2; color: var(--muted); font-size: 11px; margin-top: -4px; }
   #modal .error { color: var(--error); font-size: 12px; min-height: 16px; margin-top: 6px; }
   #modal .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }

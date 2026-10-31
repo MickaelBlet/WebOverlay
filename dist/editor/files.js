@@ -184,8 +184,9 @@ export async function newFile(kind = "script") {
       { id: "cancel", label: "Cancel" },
       { id: "create", label: "Create", primary: true },
     ],
-    onInput: (v, inputs) => {
-      const k = kindOfPath(v.path);
+    onInput: (v, inputs, changed) => {
+      // The extension picks the type while typing the path; the Type select stays free.
+      const k = changed === "path" && kindOfPath(v.path);
       if (k && k !== v.kind) inputs.kind.value = k;
       inputs.run_at.disabled = inputs.kind.value !== "script";
     },
