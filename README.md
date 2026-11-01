@@ -97,7 +97,7 @@ Paths are relative to the config file. Files are read at startup: restart the ap
 `weboverlay` without `--config` opens the launcher instead of an app: one grid of app tiles:
 the recent apps (the last 10 opened, from the launcher or the command line, stored in
 `<local data dir>/weboverlay/recent.json`) and the apps of the other local configs (every `*.toml` of `<config dir>/weboverlay/`
-and next to the executable or the `.AppImage` file, configs created or added from the launcher). Each app is listed once;
+and next to the executable or the `.AppImage` file, configs created or imported from the launcher). Each app is listed once;
 recent apps no longer in their config are greyed out. Tiles are sorted by name A→Z by default; the sort menu
 at the right of the status bar switches to Z→A or to recently opened first (recent apps newest first, then the config apps in
 config order), and the choice is remembered. The top bar (search, `Configs`, `New config…`) is the window's
@@ -111,11 +111,13 @@ Tiles show the app `icon` from the config, else the app favicon: the last one se
   Arrow keys move between tiles.
 - **App menu** (`⋯` on hover, right click or the menu key): `Open`, `Edit config`, `Remove from recent`.
 - **Configs** menu in the header: **Folder config** (`config.toml` next to the executable, when present),
-  **User config** (`<config dir>/weboverlay/config.toml`) and the configs created with `New config…`, with
+  **User config** (`<config dir>/weboverlay/config.toml`) and the configs created with `New config…` or imported, with
   their path, errors (the button shows how many configs are invalid), the app title, `Open` and `Edit` (`Create` when missing).
 - **New config…**: native "save as" dialog; the file is created from a commented example of every key unless it
   exists, then opened in the editor. These configs are stored in `<local data dir>/weboverlay/configs.json`;
   `Forget` removes one from the list (the file is kept).
+- **Import…** (bottom of the `Configs` menu): native open dialog; adds an existing config file to the launcher
+  (same list as `New config…`, the file stays where it is).
 
 ## Editor
 

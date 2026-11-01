@@ -191,6 +191,7 @@ fn main() -> ExitCode {
             launcher::launcher_open,
             launcher::launcher_edit,
             launcher::launcher_create,
+            launcher::launcher_import,
             launcher::launcher_forget_recent,
             launcher::launcher_forget,
             launcher::launcher_window,

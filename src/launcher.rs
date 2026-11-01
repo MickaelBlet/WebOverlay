@@ -446,13 +446,9 @@ pub fn launcher_edit(webview: Webview, config: PathBuf) -> Result<(), String> {
     spawn_editor(config)
 }
 
-/// Asks for a config path with a native "save as" dialog, creates the file from `NEW_CONFIG`
-/// (an existing file is kept as is), adds it to the launcher and opens it in the editor.
-/// Returns `None` when the dialog is cancelled.
-#[tauri::command]
-pub async fn launcher_create(webview: Webview) -> Result<Option<PathBuf>, String> {
-    check_caller(&webview)?;
-    let list_path = added_path().ok_or("cannot determine the local data directory")?;
+/// Asks for a config path with a native dialog ("save as" when `save`, else "open").
+/// Returns the absolute path, `None` when the dialog is cancelled.
+async fn pick_config(webview: &Webview, save: bool) -> Result<Option<PathBuf>, String> {
     let window = webview.window();
     let start = config::user_path()
         .ok()
@@ -462,14 +458,21 @@ pub async fn launcher_create(webview: Webview) -> Result<Option<PathBuf>, String
     webview
         .run_on_main_thread(move || {
             let mut dialog = rfd::AsyncFileDialog::new()
-                .set_title("New config")
-                .set_file_name("config.toml")
                 .add_filter("TOML", &["toml"])
                 .set_parent(&window);
             if let Some(dir) = start {
                 dialog = dialog.set_directory(dir);
             }
-            let picked = dialog.save_file();
+            let picked = if save {
+                Box::pin(
+                    dialog
+                        .set_title("New config")
+                        .set_file_name("config.toml")
+                        .save_file(),
+                ) as std::pin::Pin<Box<dyn std::future::Future<Output = _> + Send>>
+            } else {
+                Box::pin(dialog.set_title("Import config").pick_file())
+            };
             std::thread::spawn(move || {
                 let _ = tx.send(tauri::async_runtime::block_on(picked));
             });
@@ -478,10 +481,29 @@ pub async fn launcher_create(webview: Webview) -> Result<Option<PathBuf>, String
     let picked = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
         .await
         .map_err(|e| e.to_string())?;
-    let Some(picked) = picked else {
+    picked
+        .map(|p| std::path::absolute(p.path()).map_err(|e| e.to_string()))
+        .transpose()
+}
+
+/// Puts `path` first in the added configs (`configs.json`).
+fn add_to_list(path: &Path) -> Result<(), String> {
+    let list_path = added_path().ok_or("cannot determine the local data directory")?;
+    save_list(
+        &list_path,
+        &add_config(load_list(&list_path), path.to_path_buf()),
+    )
+}
+
+/// Asks for a config path with a native "save as" dialog, creates the file from `NEW_CONFIG`
+/// (an existing file is kept as is), adds it to the launcher and opens it in the editor.
+/// Returns `None` when the dialog is cancelled.
+#[tauri::command]
+pub async fn launcher_create(webview: Webview) -> Result<Option<PathBuf>, String> {
+    check_caller(&webview)?;
+    let Some(path) = pick_config(&webview, true).await? else {
         return Ok(None);
     };
-    let path = std::path::absolute(picked.path()).map_err(|e| e.to_string())?;
     if !path.exists() {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -490,8 +512,24 @@ pub async fn launcher_create(webview: Webview) -> Result<Option<PathBuf>, String
         fs::write(&path, NEW_CONFIG)
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
-    save_list(&list_path, &add_config(load_list(&list_path), path.clone()))?;
+    add_to_list(&path)?;
     spawn_editor(path.clone())?;
+    Ok(Some(path))
+}
+
+/// Asks for an existing config file with a native "open" dialog and adds it to the launcher
+/// (the file is left in place, an invalid config is listed with its error).
+/// Returns `None` when the dialog is cancelled.
+#[tauri::command]
+pub async fn launcher_import(webview: Webview) -> Result<Option<PathBuf>, String> {
+    check_caller(&webview)?;
+    let Some(path) = pick_config(&webview, false).await? else {
+        return Ok(None);
+    };
+    if !path.is_file() {
+        return Err(format!("{} is not a file", path.display()));
+    }
+    add_to_list(&path)?;
     Ok(Some(path))
 }
 

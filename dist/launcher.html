@@ -621,11 +621,23 @@
   function renderConfigs() {
     configsPop.replaceChildren(
       ...(state.configs.length ? state.configs.map(configRow) : [el("div", { className: "note cfg", textContent: "No config found." })]),
+      el(
+        "div",
+        { className: "cfg" },
+        el(
+          "div",
+          { className: "actions" },
+          button("Import…", () => {
+            closePopover();
+            importConfig();
+          }, { title: "Add an existing config file to this list (the file stays where it is)" }),
+        ),
+      ),
     );
   }
 
   function emptyState() {
-    const actions = el("div", { className: "actions" }, button("New config…", createConfig, { className: "primary" }));
+    const actions = el("div", { className: "actions" }, button("New config…", createConfig, { className: "primary" }), button("Import…", importConfig));
     const user = state.configs.find((c) => c.kind === "user");
     if (user) {
       actions.append(button(user.exists ? "Edit user config" : "Create user config", () =>
@@ -695,6 +707,16 @@
     try {
       const path = await invoke("launcher_create");
       if (path) setMessage(`Created ${path}`, "ok");
+      refresh();
+    } catch (e) {
+      setMessage(String(e), "error");
+    }
+  }
+
+  async function importConfig() {
+    try {
+      const path = await invoke("launcher_import");
+      if (path) setMessage(`Added ${path}`, "ok");
       refresh();
     } catch (e) {
       setMessage(String(e), "error");

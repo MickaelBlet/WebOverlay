@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `center` app key: opens the app window centered on the screen (default `false`).
 - Launcher: the window opens centered on the screen.
 - Launcher: lists the apps of every `*.toml` file of the user config directory (`~/.config/weboverlay/`, `%APPDATA%\weboverlay\`) and next to the executable (next to the `.AppImage` file for AppImages), not only `config.toml`.
+- Launcher: `Import…` in the `Configs` menu (and the empty state) adds an existing config file to the launcher with a native open dialog (the file stays in place).
 
 ### Changed
 
