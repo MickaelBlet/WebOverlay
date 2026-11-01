@@ -218,6 +218,17 @@ pub static SCHEMA: &[KeyDoc] = &[
             "true$0",
         )
     },
+    KeyDoc {
+        values: BOOL,
+        ..key(
+            "app",
+            "center",
+            "boolean",
+            Some("false"),
+            "Open the window centered on the screen.",
+            "true$0",
+        )
+    },
     key(
         "app",
         "zoom",
@@ -388,7 +399,7 @@ mod tests {
             .map(|k| match k.key {
                 "run_at" => format!("{} = \"document-idle\"", k.key),
                 "hide" => format!("{} = [\"zoom\"]", k.key),
-                "width" | "height" | "zoom" | "maximized" => {
+                "width" | "height" | "zoom" | "maximized" | "center" => {
                     format!("{} = {}", k.key, k.example.replace("$0", ""))
                 }
                 _ => format!("{} = {}", k.key, fill(k.example)),

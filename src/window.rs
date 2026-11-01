@@ -110,14 +110,17 @@ macro_rules! configure {
 
 pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     let label = app.config.name.clone();
-    let window = WindowBuilder::new(handle, &label)
+    let mut builder = WindowBuilder::new(handle, &label)
         .title(app.config.title.as_deref().unwrap_or(&app.config.name))
         .inner_size(app.config.width, app.config.height)
         .decorations(false)
         .maximized(app.config.maximized)
         // Shown once the header has loaded: no blank window while the webviews start.
-        .visible(false)
-        .build()?;
+        .visible(false);
+    if app.config.center {
+        builder = builder.center();
+    }
+    let window = builder.build()?;
     icon::apply_configured(&window, &app);
     icon::set_app_id(&window, &app);
     header::register(handle, &label, app.clone());

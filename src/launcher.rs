@@ -34,6 +34,7 @@ const NEW_CONFIG: &str = r##"# WebOverlay config: one [app] window per file. Scr
 # width = 1200                        # default 1200
 # height = 800                        # default 800
 # maximized = false                   # width/height still apply when restored
+# center = false                      # open the window centered on the screen
 # zoom = 1.0                          # initial page zoom (0.3 to 3.0), also the header's zoom reset
 # user_agent = "Mozilla/5.0 ..."      # default: WebView user agent
 # icon = "example/icon.png"           # header/window/taskbar/launcher icon (PNG, ICO, SVG...), default: site favicon
@@ -110,8 +111,9 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
         WebviewUrl::App("launcher.html".into()),
     )
     .title("WebOverlay")
-    .inner_size(600.0, 400.0)
+    .inner_size(570.0, 400.0)
     .min_inner_size(420.0, 240.0)
+    .center()
     .decorations(false)
     .visible(false)
     .on_page_load(show_when_loaded)

@@ -67,6 +67,7 @@ title = "Gmail"                    # optional, default: page title
 width = 1200                       # optional
 height = 800                       # optional
 maximized = false                  # optional, start maximized (also `--maximized` on the command line)
+center = false                     # optional, open the window centered on the screen
 zoom = 1.25                        # optional, initial page zoom (0.3 to 3.0, default 1.0), also the zoom reset
 user_agent = "..."                 # optional
 icon = "gmail/icon.png"            # optional, header/window/taskbar/launcher icon (PNG, ICO, JPEG, GIF, WebP, BMP, SVG), default: site favicon

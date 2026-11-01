@@ -46,6 +46,9 @@ pub struct AppConfig {
     /// Start maximized (`width`/`height` still apply when restored).
     #[serde(default)]
     pub maximized: bool,
+    /// Open the window centered on the screen.
+    #[serde(default)]
+    pub center: bool,
     /// Initial page zoom (1.0 = 100%), also the target of the header's zoom reset.
     #[serde(default = "default_zoom")]
     pub zoom: f64,
@@ -393,6 +396,7 @@ mod tests {
         assert_eq!(app.scripts[0].run_at, RunAt::DocumentStart);
         assert_eq!(app.width, 1200.0);
         assert!(!app.maximized);
+        assert!(!app.center);
         assert_eq!(app.zoom, 1.0);
     }
 
