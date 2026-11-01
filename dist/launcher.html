@@ -133,7 +133,8 @@
     line-height: 16px;
     text-align: center;
   }
-  .chevron { color: var(--muted); font-size: 10px; }
+  .chevron { flex: none; width: 10px; height: 10px; fill: none; stroke: var(--muted); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.15s; }
+  #configs-btn[aria-expanded="true"] .chevron { transform: rotate(180deg); }
   .win { display: flex; flex: none; margin-left: auto; padding-left: 4px; }
   #bar .win button {
     display: grid;
@@ -318,7 +319,7 @@
       <input id="search" type="search" placeholder="Search apps…" autocomplete="off" spellcheck="false" aria-label="Search apps">
     </label>
     <button id="configs-btn" aria-haspopup="true" aria-expanded="false" title="Config files">
-      Configs <span id="badge" class="badge" hidden></span><span class="chevron">▾</span>
+      Configs <span id="badge" class="badge" hidden></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
     </button>
     <div class="win">
       <button data-win="minimize" title="Minimize" tabindex="-1">

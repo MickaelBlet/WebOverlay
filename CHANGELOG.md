@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Launcher: the `Configs` button arrow is an SVG chevron (was a `▾` character) and points up while the menu is open.
 - Launcher: `Create` / `Create user config` writes the missing config from the commented example of every key (like `New config…`) before opening the editor, instead of an empty file.
 - Launcher: `New config…` moved from the title bar to a `+` button at the bottom right (still in the empty state).
 - **Breaking**: one app per config file. The config holds a single `[app]` table instead of the `[[app]]` list (an `[[app]]` config is refused with an explicit error: move each app into its own config file). The command line no longer takes app names (`weboverlay --config <path>` opens its app), the launcher's config menu shows the app with `Open` instead of `Open all`, and a pinned Windows taskbar app relaunches with `--config <path>` only (re-pin apps pinned with an older version).
