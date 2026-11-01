@@ -436,13 +436,27 @@ fn spawn_editor(config: PathBuf) -> Result<(), String> {
     ])
 }
 
-/// Opens the editor on a listed local config (which may not exist yet) in a new process.
+/// Writes `NEW_CONFIG` to `path` (and its missing parent directories) unless it exists.
+fn create_config(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
+    fs::write(path, NEW_CONFIG).map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
+/// Opens the editor on a listed local config in a new process; a missing config is created
+/// from `NEW_CONFIG` first.
 #[tauri::command]
 pub fn launcher_edit(webview: Webview, config: PathBuf) -> Result<(), String> {
     check_caller(&webview)?;
     if !sources().has_config(&config) {
         return Err(format!("{} is not a listed config", config.display()));
     }
+    create_config(&config)?;
     spawn_editor(config)
 }
 
@@ -504,14 +518,7 @@ pub async fn launcher_create(webview: Webview) -> Result<Option<PathBuf>, String
     let Some(path) = pick_config(&webview, true).await? else {
         return Ok(None);
     };
-    if !path.exists() {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-        }
-        fs::write(&path, NEW_CONFIG)
-            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-    }
+    create_config(&path)?;
     add_to_list(&path)?;
     spawn_editor(path.clone())?;
     Ok(Some(path))
@@ -640,6 +647,18 @@ mod tests {
         assert_eq!(list, [PathBuf::from("b"), PathBuf::from("a")]);
         assert_eq!(add_config(Vec::new(), "c".into()), [PathBuf::from("c")]);
         assert!(Config::parse(NEW_CONFIG).unwrap().app.is_none());
+    }
+
+    #[test]
+    fn creates_missing_config_only() {
+        let dir = temp_dir("create");
+        let path = dir.join("sub").join("config.toml");
+        create_config(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), NEW_CONFIG);
+        fs::write(&path, "# mine").unwrap();
+        create_config(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "# mine");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
