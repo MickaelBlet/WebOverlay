@@ -203,6 +203,43 @@ pub fn portable_path() -> Option<PathBuf> {
     exe_dir().map(|dir| dir.join("config.toml"))
 }
 
+/// Every `*.toml` file next to the executable, sorted by name (`config.toml` first).
+pub fn portable_paths() -> Vec<PathBuf> {
+    exe_dir().map(|dir| toml_files(&dir)).unwrap_or_default()
+}
+
+/// Every `*.toml` file of `<config dir>/weboverlay`, sorted by name (`config.toml` first).
+pub fn user_paths() -> Vec<PathBuf> {
+    user_path()
+        .ok()
+        .and_then(|path| path.parent().map(toml_files))
+        .unwrap_or_default()
+}
+
+/// The `*.toml` files of `dir` (not recursive), sorted by name, `config.toml` first.
+fn toml_files(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
+                && path.is_file()
+        })
+        .collect();
+    paths.sort_by_key(|path| {
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        (name != "config.toml", name)
+    });
+    paths
+}
+
 /// `<config dir>/weboverlay/config.toml` (may not exist).
 pub fn user_path() -> Result<PathBuf> {
     let dir = dirs::config_dir().context("cannot determine the user config directory")?;

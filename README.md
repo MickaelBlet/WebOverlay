@@ -95,7 +95,8 @@ Paths are relative to the config file. Files are read at startup: restart the ap
 
 `weboverlay` without `--config` opens the launcher instead of an app: one grid of app tiles:
 the recent apps (the last 10 opened, from the launcher or the command line, stored in
-`<local data dir>/weboverlay/recent.json`) and the apps of the other local configs. Each app is listed once;
+`<local data dir>/weboverlay/recent.json`) and the apps of the other local configs (every `*.toml` of `<config dir>/weboverlay/`
+and next to the executable or the `.AppImage` file, configs created or added from the launcher). Each app is listed once;
 recent apps no longer in their config are greyed out. Tiles are sorted by name A→Z by default; the sort menu
 at the right of the status bar switches to Z→A or to recently opened first (recent apps newest first, then the config apps in
 config order), and the choice is remembered. The top bar (search, `Configs`, `New config…`) is the window's

@@ -1,5 +1,7 @@
 //! Launcher window (`dist/launcher.html`), shown when started without `--config`: recent
-//! apps plus the apps of the user, portable and added configs, each started in a new process. Only the launcher webview may call its commands, and only on the listed configs/apps.
+//! apps plus the apps of the user and portable configs (every `*.toml` of the user config dir
+//! and next to the executable) and added configs, each started in a new process. Only the
+//! launcher webview may call its commands, and only on the listed configs/apps.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -291,12 +293,16 @@ fn sources_from(recent: Vec<RecentEntry>, locals: Vec<(&'static str, PathBuf)>) 
 fn sources() -> Sources {
     let recent = recent_path().map(|p| load_list(&p)).unwrap_or_default();
     let mut locals = Vec::new();
-    if let Some(path) = config::portable_path() {
-        locals.push(("folder", path));
-    }
+    locals.extend(
+        config::portable_paths()
+            .into_iter()
+            .map(|path| ("folder", path)),
+    );
+    // `config.toml` first, even when missing (the launcher offers to create it).
     if let Ok(path) = config::user_path() {
         locals.push(("user", path));
     }
+    locals.extend(config::user_paths().into_iter().map(|path| ("user", path)));
     let added: Vec<PathBuf> = added_path().map(|p| load_list(&p)).unwrap_or_default();
     locals.extend(added.into_iter().map(|path| ("added", path)));
     sources_from(recent, locals)

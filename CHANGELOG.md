@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config editor: tabs, a second editor group side by side (`Ctrl+\`), a resizable and collapsible sidebar (`Ctrl+B`); open tabs and layout are restored per config.
 - Config editor: rename the config file from its context menu (same directory); the launcher's recent and added configs follow.
 - Config editor: closing the window or restarting with unsaved changes asks to save them.
+- Launcher: lists the apps of every `*.toml` file of the user config directory (`~/.config/weboverlay/`, `%APPDATA%\weboverlay\`) and next to the executable (next to the `.AppImage` file for AppImages), not only `config.toml`.
 
 ### Changed
 
