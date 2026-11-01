@@ -306,7 +306,6 @@
     <button id="configs-btn" aria-haspopup="true" aria-expanded="false" title="Config files">
       Configs <span id="badge" class="badge" hidden></span><span class="chevron">▾</span>
     </button>
-    <button id="new" class="primary" title="Create a config file and open it in the editor">New config…</button>
     <div class="win">
       <button data-win="minimize" title="Minimize" tabindex="-1">
         <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
@@ -627,6 +626,10 @@
         el(
           "div",
           { className: "actions" },
+          button("New config…", () => {
+            closePopover();
+            createConfig();
+          }, { className: "primary", title: "Create a config file and open it in the editor" }),
           button("Import…", () => {
             closePopover();
             importConfig();
@@ -793,7 +796,6 @@
     const rect = e.currentTarget.getBoundingClientRect();
     openPopover(configsPop, rect.right, rect.bottom + 6, e.currentTarget, true);
   });
-  $("new").addEventListener("click", createConfig);
 
   // Pick up config edits and new recent entries made by other instances.
   window.addEventListener("focus", refresh);
