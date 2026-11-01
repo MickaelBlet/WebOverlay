@@ -416,13 +416,23 @@
     });
   }
 
+  // Commands started recently, by command + config: a double click (or a repeated Enter)
+  // would otherwise spawn a second instance before the first window shows up.
+  const starting = new Set();
+  const START_COOLDOWN_MS = 1500;
+
   async function run(cmd, args, label) {
+    const key = JSON.stringify([cmd, args.config]);
+    if (starting.has(key)) return;
+    starting.add(key);
     try {
       await invoke(cmd, args);
       setMessage(`Started ${label}`, "ok");
       if (cmd === "launcher_open") refresh();
     } catch (e) {
       setMessage(String(e), "error");
+    } finally {
+      setTimeout(() => starting.delete(key), START_COOLDOWN_MS);
     }
   }
 
