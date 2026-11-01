@@ -97,6 +97,8 @@ $("file-list").addEventListener("contextmenu", (e) => {
       showMenu(e.clientX, e.clientY, [
         { label: "New Script…", run: () => newFile("script") },
         { label: "New Style…", run: () => newFile("style") },
+        "-",
+        { label: "Import Script or Style…", run: importFile },
       ]);
     }
     return;
@@ -126,7 +128,7 @@ export function fileMenu(x, y, path, first = []) {
   showMenu(x, y, [
     ...first,
     ...(first.length ? ["-"] : []),
-    { label: "Rename…", disabled: !entry, run: () => renameFile(path) },
+    { label: "Rename…", disabled: !file, run: () => renameFile(path) },
     { label: "Remove from Config", disabled: !entry, run: () => unreferenceFile(path) },
     { label: "Delete File", danger: true, disabled: !entry, run: () => deleteFile(path) },
     "-",
@@ -171,18 +173,45 @@ export async function newFile(kind = "script") {
   if (!(await configReady())) return;
   const dir = state.files.find((f) => f.kind === kind && relDir(f.path))?.path;
   const prefix = dir ? relDir(dir).replace(/\\/g, "/") + "/" : "";
+  await entryDialog({ kind, path: prefix, selection: [prefix.length, prefix.length] });
+}
+
+/** Adds an existing script or style, picked with the native dialog (copied next to the config). */
+export async function importFile() {
+  if (state.configError) return setMessage("Fix and save the config first.", "error");
+  if (!(await configReady())) return;
+  let picked;
+  try {
+    picked = await invoke("editor_pick_import");
+  } catch (e) {
+    return setMessage(String(e), "error");
+  }
+  if (!picked) return;
+  const name = picked.path.lastIndexOf("/") + 1;
+  await entryDialog({
+    kind: kindOfPath(picked.path) || "script",
+    path: picked.path,
+    selection: [name, picked.path.length],
+    source: picked.source,
+  });
+}
+
+/** The New / Import dialog, then `editor_add`. */
+async function entryDialog({ kind, path, selection, source }) {
   const { button, values } = await modal({
-    title: "New Script or Style",
-    body: "The file is created next to the config and added to it.",
+    title: source ? `Import ${baseName(source)}` : "New Script or Style",
+    body: source
+      ? "The file is copied next to the config (kept in place when already there) and added to it."
+      : "The file is created next to the config and added to it.",
     fields: [
-      { id: "path", label: "Path", value: prefix, placeholder: kind === "style" ? "style.css" : "main.js", hint: "Relative to the config directory", selection: [prefix.length, prefix.length] },
+      { id: "path", label: "Path", value: path, placeholder: kind === "style" ? "style.css" : "main.js", hint: "Relative to the config directory", selection },
       { id: "kind", label: "Type", value: kind, options: [["script", "Script (JavaScript)"], ["style", "Style (CSS)"]] },
       { id: "run_at", label: "Run at", value: "document-end", options: RUN_AT },
       { id: "matches", label: "Matches", placeholder: "*://example.com/*", hint: "URL wildcards, comma-separated; empty = every page" },
     ],
     buttons: [
       { id: "cancel", label: "Cancel" },
-      { id: "create", label: "Create", primary: true },
+      { id: "create", label: source ? "Import" : "Create", primary: true },
     ],
     onInput: (v, inputs, changed) => {
       // The extension picks the type while typing the path; the Type select stays free.
@@ -205,8 +234,9 @@ export async function newFile(kind = "script") {
       path: values.path.trim(),
       runAt: values.kind === "script" ? values.run_at : null,
       matches: values.matches.split(",").map((m) => m.trim()).filter(Boolean),
+      import: !!source,
     });
-    await after(`Added ${values.path.trim()}.`);
+    await after(`${source ? "Imported" : "Added"} ${values.path.trim()}.`);
     await openFile(full);
   } catch (e) {
     setMessage(String(e), "error");
@@ -214,6 +244,7 @@ export async function newFile(kind = "script") {
 }
 
 async function renameFile(path) {
+  if (fileOf(path)?.kind === "config") return renameConfig(path);
   if (!(await configReady())) return;
   if (isDirty(path) && !(await saveFile(path))) return;
   const kind = fileOf(path)?.kind;
@@ -232,6 +263,35 @@ async function renameFile(path) {
     const to = await invoke("editor_rename", { path, newPath: values.path.trim() });
     renamePath(path, to);
     await after(`Renamed to ${values.path.trim()}.`);
+  } catch (e) {
+    setMessage(String(e), "error");
+  }
+}
+
+/** Renames the config in its directory (the script/style paths stay relative to it). */
+async function renameConfig(path) {
+  if (!(await configReady())) return;
+  const name = baseName(path);
+  const { button, values } = await modal({
+    title: `Rename ${name}`,
+    fields: [{ id: "name", label: "New name", value: name, hint: "Same directory. A pinned taskbar button still points to the old file.", selection: [0, name.lastIndexOf(".")] }],
+    buttons: [
+      { id: "cancel", label: "Cancel" },
+      { id: "rename", label: "Rename", primary: true },
+    ],
+    validate: (v) => {
+      const n = v.name.trim();
+      if (/[\\/]/.test(n)) return "Enter a file name, not a path.";
+      return /^[^.].*\.toml$/i.test(n) ? "" : "A config file name ends with .toml.";
+    },
+  });
+  if (button !== "rename") return;
+  try {
+    const to = await invoke("editor_rename_config", { name: values.name.trim() });
+    if (to === path) return;
+    state.configPath = to; // `renamePath` then saves the session (per config path) under it.
+    renamePath(path, to);
+    await after(`Renamed to ${baseName(to)}.`);
   } catch (e) {
     setMessage(String(e), "error");
   }
@@ -314,6 +374,7 @@ $("side-sash").addEventListener("dblclick", () => {
   store(LAYOUT, layout);
 });
 $("add-file").addEventListener("click", () => newFile());
+$("import-file").addEventListener("click", importFile);
 $("reveal-config").addEventListener("click", () => state.configPath && reveal(state.configPath));
 $("hide-sidebar").addEventListener("click", toggleSidebar);
 applyLayout();
@@ -325,6 +386,7 @@ register([
   { id: "newFile", label: "File: New Script or Style…", keys: ["ctrl+n"], run: () => newFile() },
   { id: "newScript", label: "File: New Script…", run: () => newFile("script") },
   { id: "newStyle", label: "File: New Style…", run: () => newFile("style") },
+  { id: "importFile", label: "File: Import Script or Style…", run: importFile },
   { id: "renameFile", label: "File: Rename…", run: current(renameFile) },
   { id: "unreferenceFile", label: "File: Remove from Config", run: current(unreferenceFile) },
   { id: "deleteFile", label: "File: Delete", run: current(deleteFile) },

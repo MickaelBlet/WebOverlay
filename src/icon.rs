@@ -402,6 +402,22 @@ pub fn cached(config_path: &Path, name: &str) -> Option<String> {
     ))
 }
 
+/// The config `old` was renamed to `new` (absolute paths): app `name` keeps its cached launcher
+/// icon (pin icons follow the new identity on the next launch).
+pub fn config_renamed(old: &Path, new: &Path, name: &str) {
+    let (Some(from), Some(to)) = (
+        icons_path(&format!("{}.png", app_id(old, name))),
+        icons_path(&format!("{}.png", app_id(new, name))),
+    ) else {
+        return;
+    };
+    if from != to && from.is_file() {
+        if let Err(e) = std::fs::copy(&from, &to) {
+            eprintln!("weboverlay: cannot copy {}: {e}", from.display());
+        }
+    }
+}
+
 /// Downloads `/favicon.ico` of `url` for an app never opened (the page favicon is only known once
 /// it ran), caches it and returns it like `cached`. Blocking.
 pub fn fetch_cached(

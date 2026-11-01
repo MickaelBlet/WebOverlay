@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Config editor: a Pin button (and the `View: Toggle Always on Top` command) keeps the editor window above the other windows.
-- Config editor: new scripts and styles from the sidebar (`Ctrl+N`), added to `config.toml` with its comments and layout kept; rename, remove from the config, delete, reveal in the file manager and copy path from the file context menu.
+- Config editor: new scripts and styles from the sidebar (`Ctrl+N`; an existing file is refused) or imported (copied next to the config), added to `config.toml` with its comments and layout kept; rename, remove from the config, delete, reveal in the file manager and copy path from the file context menu.
 - Config editor: tabs, a second editor group side by side (`Ctrl+\`), a resizable and collapsible sidebar (`Ctrl+B`); open tabs and layout are restored per config.
+- Config editor: rename the config file from its context menu (same directory); the launcher's recent and added configs follow.
 - Config editor: closing the window or restarting with unsaved changes asks to save them.
 
 ### Changed

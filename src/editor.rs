@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -20,11 +21,14 @@ use crate::{icon, launcher, window};
 pub const EDITOR_LABEL: &str = "weboverlay:editor";
 
 pub struct Editor {
-    pub config_path: PathBuf,
+    /// Changed by `editor_rename_config`: read it with `config_path()`.
+    pub config_path: Mutex<PathBuf>,
     /// `--maximized`, applied by Restart.
     pub maximized: bool,
     /// The page has unsaved changes (`editor_dirty`): closing the window asks first.
     pub dirty: AtomicBool,
+    /// Last file chosen by `editor_pick_import`: the only source `editor_add` copies from.
+    pub import: Mutex<Option<PathBuf>>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,6 +80,19 @@ pub struct Diagnostic {
     end: Option<usize>,
 }
 
+impl Editor {
+    pub fn config_path(&self) -> PathBuf {
+        self.config_path
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+}
+
+fn window_title(config_path: &Path) -> String {
+    format!("WebOverlay — {}", config_path.display())
+}
+
 /// Opens the editor window, or focuses it when already open.
 /// From a sync command use `open_later`: building a window there leaves it blank on Windows.
 pub fn open(handle: &AppHandle) -> tauri::Result<()> {
@@ -83,10 +100,10 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
         let _ = window.unminimize();
         return window.set_focus();
     }
-    let config_path = &handle.state::<Editor>().config_path;
+    let config_path = handle.state::<Editor>().config_path();
     let window =
         WebviewWindowBuilder::new(handle, EDITOR_LABEL, WebviewUrl::App("editor.html".into()))
-            .title(format!("WebOverlay — {}", config_path.display()))
+            .title(window_title(&config_path))
             .inner_size(1000.0, 700.0)
             .min_inner_size(520.0, 320.0)
             .decorations(false)
@@ -190,7 +207,7 @@ fn check_caller(webview: &Webview) -> Result<(), String> {
 
 /// Fails unless `path` is one of the editable files.
 fn editable(editor: &Editor, path: &Path) -> Result<Kind, String> {
-    files(&editor.config_path)
+    files(&editor.config_path())
         .files
         .into_iter()
         .find(|file| file.path == path)
@@ -397,19 +414,28 @@ fn entry_kind(editor: &Editor, path: &Path) -> Result<Kind, String> {
     }
 }
 
-/// Adds a script or style entry to the saved config and creates its file when missing.
-/// `path` is relative to the config directory. Returns the absolute path.
+/// Adds a script or style entry to the saved config. `path` is relative to the config
+/// directory; its file must not exist: it is created empty, or copied from `source` (imported).
+/// A `source` that already is that file is only referenced. Returns the absolute path.
 fn add(
     config_path: &Path,
     kind: Kind,
     path: &str,
     run_at: Option<&str>,
     matches: &[String],
+    source: Option<&Path>,
 ) -> Result<PathBuf, String> {
     let rel = entry_path(kind, path)?;
     let base = config_path.parent().unwrap_or(Path::new("."));
     let full = base.join(&rel);
     let key = kind.key()?;
+    let in_place = source.is_some_and(|s| same_file(s, &full));
+    if full.exists() && !in_place {
+        return Err(format!("{} already exists", full.display()));
+    }
+    if let Some(source) = source.filter(|s| !s.is_file()) {
+        return Err(format!("{} is not a file", source.display()));
+    }
     edit_config(config_path, |doc, _| {
         let mut entry = InlineTable::new();
         entry.insert("path", rel.as_str().into());
@@ -421,10 +447,47 @@ fn add(
         }
         push_entry(doc, key, entry)
     })?;
-    if !full.exists() {
-        write_file(&full, "")?;
+    match source {
+        Some(_) if in_place => {}
+        Some(source) => {
+            if let Some(parent) = full.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            fs::copy(source, &full)
+                .map_err(|e| format!("cannot copy {}: {e}", source.display()))?;
+        }
+        None => write_file(&full, "")?,
     }
     Ok(full)
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// Entry path suggested for importing `source`: its path when it is under the config
+/// directory, else its file name (copied next to the config).
+fn import_path(config_path: &Path, source: &Path) -> String {
+    let base = config_path.parent().unwrap_or(Path::new("."));
+    let under = fs::canonicalize(base)
+        .ok()
+        .zip(fs::canonicalize(source).ok())
+        .and_then(|(base, source)| {
+            source
+                .strip_prefix(&base)
+                .ok()
+                .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        });
+    under.unwrap_or_else(|| {
+        source
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    })
 }
 
 /// Removes the entries of `path` from the saved config (the file is kept).
@@ -465,6 +528,35 @@ fn rename(config_path: &Path, kind: Kind, path: &Path, new: &str) -> Result<Path
     Ok(full)
 }
 
+/// Renames the config file to `name`, in its directory (script/style paths stay valid).
+/// Returns the new path.
+fn rename_config(config_path: &Path, name: &str) -> Result<PathBuf, String> {
+    let name = name.trim();
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+        return Err(format!("invalid file name: {name}"));
+    }
+    if !name.to_ascii_lowercase().ends_with(".toml") || name.len() == ".toml".len() {
+        return Err("a config file name ends with .toml".into());
+    }
+    let new = config_path.with_file_name(name);
+    if new == config_path {
+        return Ok(new);
+    }
+    // A case-only change on a case-insensitive filesystem designates the same file.
+    let same_file = name.eq_ignore_ascii_case(
+        &config_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    if new.exists() && !same_file {
+        return Err(format!("{} already exists", new.display()));
+    }
+    fs::rename(config_path, &new)
+        .map_err(|e| format!("cannot rename {}: {e}", config_path.display()))?;
+    Ok(new)
+}
+
 #[tauri::command]
 pub fn editor_add(
     webview: Webview,
@@ -473,15 +565,76 @@ pub fn editor_add(
     path: String,
     run_at: Option<String>,
     matches: Vec<String>,
+    import: bool,
 ) -> Result<PathBuf, String> {
     check_caller(&webview)?;
+    let source = if import {
+        let picked = editor
+            .import
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        Some(picked.ok_or("no file to import")?)
+    } else {
+        None
+    };
     add(
-        &editor.config_path,
+        &editor.config_path(),
         kind,
         &path,
         run_at.as_deref(),
         &matches,
+        source.as_deref(),
     )
+}
+
+#[derive(Serialize)]
+pub struct Import {
+    source: PathBuf,
+    /// Suggested entry path, relative to the config directory.
+    path: String,
+}
+
+/// Asks for a script or style to import with a native open dialog (started in the config
+/// directory). `editor_add` with `import` then copies it. `None` when cancelled.
+#[tauri::command]
+pub async fn editor_pick_import(
+    webview: Webview,
+    editor: State<'_, Editor>,
+) -> Result<Option<Import>, String> {
+    check_caller(&webview)?;
+    let config_path = editor.config_path();
+    let window = webview.window();
+    let start = config_path.parent().map(Path::to_path_buf);
+    let (tx, rx) = std::sync::mpsc::channel();
+    // Like `launcher_create`: built on the main (GTK) thread, awaited elsewhere.
+    webview
+        .run_on_main_thread(move || {
+            let mut dialog = rfd::AsyncFileDialog::new()
+                .set_title("Import Script or Style")
+                .add_filter("Scripts and styles", &["js", "mjs", "cjs", "css"])
+                .set_parent(&window);
+            if let Some(dir) = start.filter(|d| !d.as_os_str().is_empty()) {
+                dialog = dialog.set_directory(dir);
+            }
+            let picked = dialog.pick_file();
+            std::thread::spawn(move || {
+                let _ = tx.send(tauri::async_runtime::block_on(picked));
+            });
+        })
+        .map_err(|e| e.to_string())?;
+    let picked = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let source = std::path::absolute(picked.path()).map_err(|e| e.to_string())?;
+    *editor.import.lock().unwrap_or_else(|e| e.into_inner()) = Some(source.clone());
+    Ok(Some(Import {
+        path: import_path(&config_path, &source),
+        source,
+    }))
 }
 
 #[tauri::command]
@@ -492,7 +645,7 @@ pub fn editor_unreference(
 ) -> Result<(), String> {
     check_caller(&webview)?;
     entry_kind(&editor, &path)?;
-    unreference(&editor.config_path, &path)
+    unreference(&editor.config_path(), &path)
 }
 
 #[tauri::command]
@@ -504,7 +657,34 @@ pub fn editor_rename(
 ) -> Result<PathBuf, String> {
     check_caller(&webview)?;
     let kind = entry_kind(&editor, &path)?;
-    rename(&editor.config_path, kind, &path, &new_path)
+    rename(&editor.config_path(), kind, &path, &new_path)
+}
+
+/// Renames the config (same directory): the editor, the launcher lists and the cached launcher
+/// icon follow; a running app keeps its old identity until Restart.
+#[tauri::command]
+pub fn editor_rename_config(
+    webview: Webview,
+    editor: State<'_, Editor>,
+    name: String,
+) -> Result<PathBuf, String> {
+    check_caller(&webview)?;
+    let mut config_path = editor.config_path.lock().unwrap_or_else(|e| e.into_inner());
+    let old = config_path.clone();
+    let new = rename_config(&old, &name)?;
+    if new == old {
+        return Ok(new);
+    }
+    *config_path = new.clone();
+    drop(config_path);
+    let absolute = |p: &Path| std::path::absolute(p).unwrap_or_else(|_| p.to_owned());
+    let (old_abs, new_abs) = (absolute(&old), absolute(&new));
+    launcher::config_renamed(&old_abs, &new_abs);
+    if let Some(app) = Config::load(&new).ok().and_then(|c| c.app) {
+        icon::config_renamed(&old_abs, &new_abs, &app.name);
+    }
+    let _ = webview.window().set_title(&window_title(&new));
+    Ok(new)
 }
 
 /// Removes the entries of `path` and deletes the file.
@@ -516,7 +696,7 @@ pub fn editor_delete(
 ) -> Result<(), String> {
     check_caller(&webview)?;
     entry_kind(&editor, &path)?;
-    unreference(&editor.config_path, &path)?;
+    unreference(&editor.config_path(), &path)?;
     match fs::remove_file(&path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             Err(format!("cannot delete {}: {e}", path.display()))
@@ -545,7 +725,7 @@ pub fn editor_reveal(
 #[tauri::command]
 pub fn editor_files(webview: Webview, editor: State<'_, Editor>) -> Result<Files, String> {
     check_caller(&webview)?;
-    Ok(files(&editor.config_path))
+    Ok(files(&editor.config_path()))
 }
 
 #[tauri::command]
@@ -650,8 +830,8 @@ pub async fn editor_restart(
     check_caller(&webview)?;
     // Everything is checked before closing anything.
     let app =
-        crate::load_app(&editor.config_path, editor.maximized).map_err(|e| format!("{e:#}"))?;
-    launcher::record(&editor.config_path, &app.config);
+        crate::load_app(&editor.config_path(), editor.maximized).map_err(|e| format!("{e:#}"))?;
+    launcher::record(&editor.config_path(), &app.config);
     let old: Vec<_> = handle
         .windows()
         .into_values()
@@ -782,11 +962,20 @@ mod tests {
             "js\\main.js",
             Some("document-idle"),
             &[],
+            None,
         )
         .unwrap();
         assert_eq!(full, dir.join("js/main.js"));
         assert!(full.is_file());
-        add(&config, Kind::Style, "a.css", None, &["*://a.com/*".into()]).unwrap();
+        add(
+            &config,
+            Kind::Style,
+            "a.css",
+            None,
+            &["*://a.com/*".into()],
+            None,
+        )
+        .unwrap();
         let text = fs::read_to_string(&config).unwrap();
         assert!(
             text.starts_with("# my app\n[app]\nname = \"a\" # inline\n"),
@@ -810,8 +999,8 @@ mod tests {
             format!("{APP}scripts = [\n  {{ path = \"x.js\" }},\n]\n\n[[app.styles]]\npath = \"x.css\"\n"),
         )
         .unwrap();
-        add(&config, Kind::Script, "y.js", None, &[]).unwrap();
-        add(&config, Kind::Style, "y.css", None, &[]).unwrap();
+        add(&config, Kind::Script, "y.js", None, &[], None).unwrap();
+        add(&config, Kind::Style, "y.css", None, &[], None).unwrap();
         let text = fs::read_to_string(&config).unwrap();
         assert!(
             text.contains("scripts = [\n  { path = \"x.js\" },\n  { path = \"y.js\" },\n]"),
@@ -820,13 +1009,82 @@ mod tests {
         assert!(text.contains("[[app.styles]]\npath = \"y.css\""), "{text}");
 
         for bad in ["../x.js", "a/../../x.js", "/x.js", "x.css", ""] {
-            assert!(add(&config, Kind::Script, bad, None, &[]).is_err(), "{bad}");
+            assert!(
+                add(&config, Kind::Script, bad, None, &[], None).is_err(),
+                "{bad}"
+            );
         }
+        // An existing file is refused and the config left as is.
+        fs::write(dir.join("z.js"), "keep").unwrap();
+        let before = fs::read_to_string(&config).unwrap();
+        assert!(add(&config, Kind::Script, "z.js", None, &[], None)
+            .unwrap_err()
+            .contains("already exists"));
+        assert_eq!(fs::read_to_string(&config).unwrap(), before);
+        assert_eq!(fs::read_to_string(dir.join("z.js")).unwrap(), "keep");
+
+        // Import: a file already in the directory is referenced in place, another one copied.
+        assert_eq!(import_path(&config, &dir.join("z.js")), "z.js");
+        add(
+            &config,
+            Kind::Script,
+            "z.js",
+            None,
+            &[],
+            Some(&dir.join("z.js")),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(dir.join("z.js")).unwrap(), "keep");
+        let outside = temp_dir("import-src");
+        fs::write(outside.join("o.css"), "a{}").unwrap();
+        assert_eq!(import_path(&config, &outside.join("o.css")), "o.css");
+        let full = add(
+            &config,
+            Kind::Style,
+            "css/o.css",
+            None,
+            &[],
+            Some(&outside.join("o.css")),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(full).unwrap(), "a{}");
+        assert!(add(
+            &config,
+            Kind::Style,
+            "css/o.css",
+            None,
+            &[],
+            Some(&outside.join("o.css"))
+        )
+        .unwrap_err()
+        .contains("already exists"));
+        let text = fs::read_to_string(&config).unwrap();
+        assert!(
+            text.contains("z.js") && text.contains("css/o.css"),
+            "{text}"
+        );
+        fs::remove_dir_all(outside).unwrap();
         fs::write(&config, "").unwrap();
-        assert!(add(&config, Kind::Script, "x.js", None, &[])
+        assert!(add(&config, Kind::Script, "x.js", None, &[], None)
             .unwrap_err()
             .contains("[app]"));
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn renames_config() {
+        let dir = temp_dir("rename-config");
+        let config = dir.join("config.toml");
+        fs::write(&config, "").unwrap();
+        fs::write(dir.join("other.toml"), "").unwrap();
+        for bad in ["", "a/b.toml", "a\\b.toml", ".toml", "a.txt", "../a.toml"] {
+            assert!(rename_config(&config, bad).is_err(), "{bad}");
+        }
+        assert!(rename_config(&config, "other.toml").is_err());
+        assert_eq!(rename_config(&config, "config.toml").unwrap(), config);
+        let new = rename_config(&config, " work.TOML ").unwrap();
+        assert_eq!(new, dir.join("work.TOML"));
+        assert!(new.is_file() && !config.exists());
     }
 
     #[test]

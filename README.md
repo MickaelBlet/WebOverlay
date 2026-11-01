@@ -132,10 +132,13 @@ missing or invalid config) edits `config.toml` and the script/style files it ref
   status bar shows it (click to jump there).
 - `config.toml` is validated before saving: an invalid config is refused with the error shown.
 - Files referenced by the config but missing are marked `missing` and created on save.
-- New scripts and styles from the sidebar (`+`, `Ctrl+N`): the file is created next to the config and added
-  to its `scripts` / `styles` (with `run_at` and `matches`), comments and layout of `config.toml` kept.
+- New scripts and styles from the sidebar (`+`, `Ctrl+N`): the file is created next to the config (an
+  existing file is refused) and added to its `scripts` / `styles` (with `run_at` and `matches`), comments
+  and layout of `config.toml` kept. Import (sidebar button or right click) adds an existing `.js` / `.css`:
+  copied next to the config, or referenced in place when it already is under the config directory.
   Right click a file (or a tab) to rename it, remove it from the config (the file is kept), delete it,
-  reveal it in the file manager or copy its path.
+  reveal it in the file manager or copy its path. The config itself can be renamed too (same directory;
+  the launcher lists follow, a pinned taskbar button still points to the old file).
 - Tabs (drag to reorder, middle click to close) and a second editor group side by side (`Ctrl+\`, drag a
   tab or a sidebar file onto a group); open tabs, split and sidebar width are restored on the next opening.
 - Own title bar: app icon and name, search (quick open / commands), Pin, Restart, Save, window buttons.

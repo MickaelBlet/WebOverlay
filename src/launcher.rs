@@ -196,6 +196,44 @@ pub fn record(config_path: &Path, app: &AppConfig) {
     }
 }
 
+/// `list` with the entries of config `old` moved to `new`.
+fn rename_recent(list: Vec<RecentEntry>, old: &Path, new: &Path) -> Vec<RecentEntry> {
+    list.into_iter()
+        .map(|mut e| {
+            if e.config == old {
+                e.config = new.to_owned();
+            }
+            e
+        })
+        .collect()
+}
+
+/// The config `old` was renamed to `new` (absolute paths): the recent and added lists follow
+/// (errors are only logged).
+pub fn config_renamed(old: &Path, new: &Path) {
+    if let Some(path) = recent_path() {
+        let list: Vec<RecentEntry> = load_list(&path);
+        if list.iter().any(|e| e.config == old) {
+            if let Err(e) = save_list(&path, &rename_recent(list, old, new)) {
+                eprintln!("weboverlay: {e}");
+            }
+        }
+    }
+    if let Some(path) = added_path() {
+        let mut list: Vec<PathBuf> = load_list(&path);
+        if list.iter().any(|p| p == old) {
+            for p in &mut list {
+                if p == old {
+                    *p = new.to_owned();
+                }
+            }
+            if let Err(e) = save_list(&path, &list) {
+                eprintln!("weboverlay: {e}");
+            }
+        }
+    }
+}
+
 fn config_entry(kind: &'static str, path: PathBuf) -> ConfigEntry {
     let mut entry = ConfigEntry {
         kind,
@@ -541,6 +579,13 @@ mod tests {
             .collect();
         assert_eq!(keys, [("a".into(), "y"), ("b".into(), "x")]);
         assert_eq!(remove_recent(list, Path::new("c"), "x").len(), 2);
+    }
+
+    #[test]
+    fn renames_recent() {
+        let list = vec![entry("/a.toml", "x"), entry("/b.toml", "y")];
+        let list = rename_recent(list, Path::new("/a.toml"), Path::new("/c.toml"));
+        assert_eq!(list, vec![entry("/c.toml", "x"), entry("/b.toml", "y")]);
     }
 
     #[test]

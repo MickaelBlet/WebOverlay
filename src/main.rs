@@ -163,9 +163,10 @@ fn main() -> ExitCode {
     let result = tauri::Builder::default()
         .manage(header::States::default())
         .manage(editor::Editor {
-            config_path: launch.config_path,
+            config_path: std::sync::Mutex::new(launch.config_path),
             maximized: launch.maximized,
             dirty: Default::default(),
+            import: Default::default(),
         })
         .invoke_handler(tauri::generate_handler![
             header::header_action,
@@ -179,8 +180,10 @@ fn main() -> ExitCode {
             editor::editor_window,
             editor::editor_dirty,
             editor::editor_add,
+            editor::editor_pick_import,
             editor::editor_unreference,
             editor::editor_rename,
+            editor::editor_rename_config,
             editor::editor_delete,
             editor::editor_reveal,
             launcher::launcher_list,
