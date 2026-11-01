@@ -113,10 +113,10 @@ Tiles show the app `icon` from the config, else the app favicon: the last one se
 - **Configs** menu in the header: **Folder config** (`config.toml` next to the executable, when present),
   **User config** (`<config dir>/weboverlay/config.toml`) and the configs created with `New config…` or imported, with
   their path, errors (the button shows how many configs are invalid), the app title, `Open` and `Edit` (`Create` when missing).
-- **New config…** (bottom of the `Configs` menu): native "save as" dialog; the file is created from a commented example of every key unless it
+- **New config…** (`+` button at the bottom right): native "save as" dialog; the file is created from a commented example of every key unless it
   exists, then opened in the editor. These configs are stored in `<local data dir>/weboverlay/configs.json`;
   `Forget` removes one from the list (the file is kept).
-- **Import…** (bottom of the `Configs` menu): native open dialog; adds an existing config file to the launcher
+- **Import…** (import button at the bottom right, left of `+`): native open dialog; adds an existing config file to the launcher
   (same list as `New config…`, the file stays where it is).
 
 ## Editor

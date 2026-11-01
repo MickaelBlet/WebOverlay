@@ -17,11 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `center` app key: opens the app window centered on the screen (default `false`).
 - Launcher: the window opens centered on the screen.
 - Launcher: lists the apps of every `*.toml` file of the user config directory (`~/.config/weboverlay/`, `%APPDATA%\weboverlay\`) and next to the executable (next to the `.AppImage` file for AppImages), not only `config.toml`.
-- Launcher: `Import…` in the `Configs` menu (and the empty state) adds an existing config file to the launcher with a native open dialog (the file stays in place).
+- Launcher: an import button at the bottom right (and `Import…` in the empty state) adds an existing config file to the launcher with a native open dialog (the file stays in place).
 
 ### Changed
 
-- Launcher: `New config…` moved from the title bar to the bottom of the `Configs` menu (still in the empty state).
+- Launcher: `New config…` moved from the title bar to a `+` button at the bottom right (still in the empty state).
 - **Breaking**: one app per config file. The config holds a single `[app]` table instead of the `[[app]]` list (an `[[app]]` config is refused with an explicit error: move each app into its own config file). The command line no longer takes app names (`weboverlay --config <path>` opens its app), the launcher's config menu shows the app with `Open` instead of `Open all`, and a pinned Windows taskbar app relaunches with `--config <path>` only (re-pin apps pinned with an older version).
 - Launcher: default window width 570 px (was 600).
 - Config editor: own title bar (app icon and name, search box for quick open and commands, Pin / Restart / Save) instead of the system one.

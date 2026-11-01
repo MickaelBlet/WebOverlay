@@ -153,7 +153,21 @@
   #bar.maximized #restore-icon { display: block; }
 
   /* App grid */
-  #list { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 18px 16px; }
+  #list { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 18px 16px 64px; }
+  /* New config / Import, floating above the status bar. */
+  #fab { position: fixed; right: 24px; bottom: 40px; display: flex; gap: 8px; z-index: 1; }
+  #fab button {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+  }
+  #fab button:not(.primary) { background: var(--panel); }
+  #fab button:not(.primary):hover { background: var(--hover); }
+  #fab svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   #grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
@@ -322,6 +336,14 @@
   <main id="list">
     <div id="grid"></div><div id="note"></div>
   </main>
+  <div id="fab">
+    <button id="import-btn" title="Import config… (add an existing config file)" aria-label="Import config…">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-4-4 4 4 4-4M5 15v4h14v-4"/></svg>
+    </button>
+    <button id="new-btn" class="primary" title="New config… (create a config file and open it in the editor)" aria-label="New config…">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
   <div id="status">
     <span id="message"></span>
     <select id="sort" title="Sort apps" aria-label="Sort apps">
@@ -620,22 +642,6 @@
   function renderConfigs() {
     configsPop.replaceChildren(
       ...(state.configs.length ? state.configs.map(configRow) : [el("div", { className: "note cfg", textContent: "No config found." })]),
-      el(
-        "div",
-        { className: "cfg" },
-        el(
-          "div",
-          { className: "actions" },
-          button("New config…", () => {
-            closePopover();
-            createConfig();
-          }, { className: "primary", title: "Create a config file and open it in the editor" }),
-          button("Import…", () => {
-            closePopover();
-            importConfig();
-          }, { title: "Add an existing config file to this list (the file stays where it is)" }),
-        ),
-      ),
     );
   }
 
@@ -790,6 +796,8 @@
     }
   });
 
+  $("new-btn").addEventListener("click", createConfig);
+  $("import-btn").addEventListener("click", importConfig);
   $("configs-btn").addEventListener("click", (e) => {
     if (popover === configsPop) return closePopover();
     renderConfigs();
