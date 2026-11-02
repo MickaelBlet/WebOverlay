@@ -251,11 +251,11 @@ fn fix_header_height(header: &tauri::Webview) {
 #[cfg(target_os = "linux")]
 const RESIZE_INSET: i32 = 5;
 
-/// Tauri resizes undecorated windows from their borders on Linux only for `WebviewWindow`s (its
-/// handler is attached to window-content webviews, not to the children of a multiwebview
-/// `Window`): same handler on the header and content webviews of an app window.
+/// Tauri resizes undecorated windows from their borders on Linux only for window-content webviews,
+/// and with its `unstable` feature every webview is a child, `WebviewWindow`s included: same
+/// handler on the header and content webviews of app windows, the launcher and the editor.
 #[cfg(target_os = "linux")]
-fn attach_resize_handler(webview: &tauri::Webview) {
+pub fn attach_resize_handler(webview: &tauri::Webview) {
     let _ = webview.with_webview(|webview| {
         use gtk::gdk::{EventMask, WindowEdge};
         use gtk::glib::Propagation;

@@ -119,6 +119,8 @@ pub fn open(handle: &AppHandle) -> tauri::Result<()> {
     .on_page_load(show_when_loaded)
     .build()?;
     let _ = window.set_background_color(Some(theme_color(&window.as_ref().window(), PAGE_BG)));
+    #[cfg(target_os = "linux")]
+    window::attach_resize_handler(window.as_ref());
     icon::set_launcher_id(&window.as_ref().window());
     Ok(())
 }
