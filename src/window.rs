@@ -189,10 +189,14 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     let header_webview = window.add_child(header_view, header_rect.position, header_rect.size)?;
     #[cfg(target_os = "linux")]
     fix_header_height(&header_webview);
+    #[cfg(target_os = "linux")]
+    attach_resize_handler(&header_webview);
     #[cfg(not(target_os = "linux"))]
     let _ = header_webview;
     let content_webview =
         window.add_child(content_view, content_rect.position, content_rect.size)?;
+    #[cfg(target_os = "linux")]
+    attach_resize_handler(&content_webview);
     content_webview.hide()?;
     download::setup(&content_webview, window.clone(), None);
     if app.config.zoom != 1.0 {
@@ -240,6 +244,94 @@ fn fix_header_height(header: &tauri::Webview) {
         if let Some(parent) = widget.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) {
             parent.set_child_packing(&widget, false, true, 0, gtk::PackType::Start);
         }
+    });
+}
+
+/// Width of the resize border of undecorated windows (logical pixels, as Tauri's).
+#[cfg(target_os = "linux")]
+const RESIZE_INSET: i32 = 5;
+
+/// Tauri resizes undecorated windows from their borders on Linux only for `WebviewWindow`s (its
+/// handler is attached to window-content webviews, not to the children of a multiwebview
+/// `Window`): same handler on the header and content webviews of an app window.
+#[cfg(target_os = "linux")]
+fn attach_resize_handler(webview: &tauri::Webview) {
+    let _ = webview.with_webview(|webview| {
+        use gtk::gdk::{EventMask, WindowEdge};
+        use gtk::glib::Propagation;
+        use gtk::prelude::*;
+
+        let webview = webview.inner();
+        webview.add_events(
+            EventMask::POINTER_MOTION_MASK
+                | EventMask::BUTTON1_MOTION_MASK
+                | EventMask::BUTTON_PRESS_MASK,
+        );
+        // Toplevel GDK window when it can be resized from its borders, and the edge under the
+        // pointer (root coordinates), if any.
+        fn edge_at(
+            widget: &gtk::Widget,
+            (x, y): (f64, f64),
+        ) -> Option<(gtk::gdk::Window, WindowEdge)> {
+            let toplevel = widget.toplevel()?.downcast::<gtk::Window>().ok()?;
+            if toplevel.is_decorated() || !toplevel.is_resizable() || toplevel.is_maximized() {
+                return None;
+            }
+            let window = toplevel.window()?;
+            let (left, top) = window.position();
+            let (x, y) = (x as i32 - left, y as i32 - top);
+            let border = window.scale_factor() * RESIZE_INSET;
+            let (w, h) = (window.width(), window.height());
+            let (west, east) = (x < border, x >= w - border);
+            let (north, south) = (y < border, y >= h - border);
+            let edge = match (north, south, west, east) {
+                (true, _, true, _) => WindowEdge::NorthWest,
+                (true, _, _, true) => WindowEdge::NorthEast,
+                (_, true, true, _) => WindowEdge::SouthWest,
+                (_, true, _, true) => WindowEdge::SouthEast,
+                (true, ..) => WindowEdge::North,
+                (_, true, ..) => WindowEdge::South,
+                (.., true, _) => WindowEdge::West,
+                (.., true) => WindowEdge::East,
+                _ => return None,
+            };
+            Some((window, edge))
+        }
+
+        webview.connect_motion_notify_event(|webview, event| {
+            use gtk::gdk::CursorType;
+            let (Some((_, edge)), Some(gdk_window)) = (
+                edge_at(webview.upcast_ref(), event.root()),
+                webview.window(),
+            ) else {
+                return Propagation::Proceed;
+            };
+            let cursor = match edge {
+                WindowEdge::NorthWest => CursorType::TopLeftCorner,
+                WindowEdge::NorthEast => CursorType::TopRightCorner,
+                WindowEdge::SouthWest => CursorType::BottomLeftCorner,
+                WindowEdge::SouthEast => CursorType::BottomRightCorner,
+                WindowEdge::North => CursorType::TopSide,
+                WindowEdge::South => CursorType::BottomSide,
+                WindowEdge::West => CursorType::LeftSide,
+                _ => CursorType::RightSide,
+            };
+            let cursor = gtk::gdk::Cursor::for_display(&gdk_window.display(), cursor);
+            gdk_window.set_cursor(cursor.as_ref());
+            Propagation::Stop
+        });
+
+        webview.connect_button_press_event(|webview, event| {
+            if event.button() != 1 {
+                return Propagation::Proceed;
+            }
+            let (x, y) = event.root();
+            let Some((window, edge)) = edge_at(webview.upcast_ref(), (x, y)) else {
+                return Propagation::Proceed;
+            };
+            window.begin_resize_drag(edge, 1, x as i32, y as i32, event.time());
+            Propagation::Stop
+        });
     });
 }
 

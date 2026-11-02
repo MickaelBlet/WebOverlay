@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Linux: app windows can be resized from their borders and corners (the undecorated window resize handles of Tauri only cover the launcher and the editor, not the header + content webviews of an app window).
 - Linux: much faster rendering without a usable GPU (virtual machine without 3D acceleration such as VMware, no GPU render node): WebKitGTK's accelerated compositing (and DMA-BUF renderer) is turned off and Mesa uses its software renderer directly, which also silences the `VMware: No 3D enabled` / `failed to create dri2 screen` messages. `WEBOVERLAY_GPU=1` keeps the GPU path, `WEBOVERLAY_GPU=0` forces the software one; `WEBKIT_*` / `LIBGL_ALWAYS_SOFTWARE` variables already set are kept.
 - AppImage: no more `Failed to load module "canberra-gtk-module"` / `"pk-gtk-module"` messages (the host's `GTK_MODULES` cannot be loaded by the bundled GTK and is ignored).
 
