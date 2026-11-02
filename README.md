@@ -55,6 +55,8 @@ Config lookup (first found):
 
 Profiles: `<local data dir>/weboverlay/profiles/<app>`.
 
+Linux without a usable GPU (virtual machine without 3D acceleration, no `/dev/dri/renderD*` of a 3D driver): WebOverlay turns off WebKitGTK's accelerated compositing (`WEBKIT_DISABLE_COMPOSITING_MODE=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`, `LIBGL_ALWAYS_SOFTWARE=1`), much faster than compositing on Mesa's software renderer. `WEBOVERLAY_GPU=1` keeps the GPU path, `WEBOVERLAY_GPU=0` forces the software one; variables already set are kept. The AppImage ignores the host's `GTK_MODULES` (its GTK cannot load them).
+
 ## Config
 
 One config file = one app window (`[app]` table; a second app goes in another config file).

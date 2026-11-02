@@ -7,6 +7,8 @@ mod header;
 mod icon;
 mod inject;
 mod launcher;
+#[cfg(target_os = "linux")]
+mod linux;
 mod schema;
 mod window;
 
@@ -151,6 +153,8 @@ pub fn load_app(config_path: &Path, maximized: bool) -> Result<Arc<AppWindow>> {
 }
 
 fn main() -> ExitCode {
+    #[cfg(target_os = "linux")]
+    linux::setup_env();
     let launch = match prepare() {
         Ok(Some(launch)) => launch,
         Ok(None) => return ExitCode::SUCCESS,
