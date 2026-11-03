@@ -1,0 +1,373 @@
+<!doctype html>
+<!-- Vault window: logins of the app (vault_list), saved in the system keyring (vault_save / vault_delete), filled into the content page (vault_fill). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Vault</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f3f4f6;
+    --fg: #111827;
+    --muted: #6b7280;
+    --hover: rgba(0, 0, 0, 0.06);
+    --border: #d1d5db;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --error: #dc2626;
+    --badge: rgba(37, 99, 235, 0.12);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111827;
+      --panel: #1f2937;
+      --fg: #f3f4f6;
+      --muted: #9ca3af;
+      --hover: rgba(255, 255, 255, 0.07);
+      --border: #374151;
+      --accent: #60a5fa;
+      --accent-fg: #0b1220;
+      --error: #f87171;
+      --badge: rgba(96, 165, 250, 0.16);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  body { display: flex; flex-direction: column; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex: none;
+  }
+  input {
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+    min-width: 0;
+  }
+  #search { flex: 1; }
+  .btn {
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    flex: none;
+  }
+  .btn:hover:not(:disabled) { background: var(--hover); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 500; }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+  #error {
+    padding: 8px 12px;
+    color: var(--error);
+    border-bottom: 1px solid var(--border);
+    user-select: text;
+    -webkit-user-select: text;
+    flex: none;
+  }
+  #list { flex: 1; overflow-y: auto; margin: 0; padding: 4px 0; list-style: none; user-select: none; -webkit-user-select: none; }
+  #empty { margin: auto; color: var(--muted); text-align: center; padding: 24px; line-height: 1.6; }
+  li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px 6px 12px;
+    border-radius: 6px;
+    margin: 0 4px;
+  }
+  li:hover { background: var(--hover); }
+  .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .user { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user.none { color: var(--muted); font-style: italic; font-weight: 400; }
+  .origin { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .here { margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--badge); color: var(--accent); font-size: 11px; }
+  .actions { display: flex; gap: 2px; flex: none; }
+  .actions button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .actions button:hover { background: var(--hover); color: var(--fg); }
+  .actions button.confirm { color: var(--error); }
+  .actions button.ok { color: var(--accent); }
+  svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #form {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 10px;
+    align-items: center;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    flex: none;
+  }
+  #form h2 { grid-column: 1 / -1; margin: 0 0 2px; font-size: 13px; font-weight: 600; }
+  #form label { color: var(--muted); }
+  .pass { display: flex; gap: 4px; min-width: 0; }
+  .pass input { flex: 1; }
+  #toggle { display: grid; place-items: center; width: 28px; padding: 0; }
+  .buttons { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <input id="search" type="search" placeholder="Search" spellcheck="false" autocomplete="off">
+    <button id="add" class="btn primary" title="Save a new login">Add login</button>
+  </div>
+  <div id="error" hidden></div>
+  <ul id="list"></ul>
+  <div id="empty" hidden></div>
+  <form id="form" hidden autocomplete="off">
+    <h2 id="form-title"></h2>
+    <label for="origin">Site</label>
+    <input id="origin" placeholder="https://example.com" spellcheck="false" required>
+    <label for="username">Username</label>
+    <input id="username" spellcheck="false" autocomplete="off">
+    <label for="password">Password</label>
+    <div class="pass">
+      <input id="password" type="password" autocomplete="new-password">
+      <button id="toggle" class="btn" type="button" title="Show the password">
+        <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <div class="buttons">
+      <button id="cancel" class="btn" type="button">Cancel</button>
+      <button id="save" class="btn primary" type="submit">Save</button>
+    </div>
+  </form>
+
+<script>
+  const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args);
+  const $ = (id) => document.getElementById(id);
+
+  const ICONS = {
+    fill: '<path d="M4 12h12"/><path d="M12 8l4 4-4 4"/><path d="M20 4v16"/>',
+    copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    delete: '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>',
+    check: '<path d="M5 12l5 5 9-10"/>',
+  };
+  const svg = (name) => `<svg viewBox="0 0 24 24">${ICONS[name]}</svg>`;
+
+  let state = { current: "", logins: [] };
+  // Login being edited (null: new one).
+  let editing = null;
+
+  const showError = (e) => {
+    $("error").textContent = e ? String(e) : "";
+    $("error").hidden = !e;
+  };
+  const call = async (cmd, args) => {
+    try {
+      const result = await invoke(cmd, args);
+      showError(null);
+      return result;
+    } catch (e) {
+      showError(e);
+      throw e;
+    }
+  };
+
+  const copy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const area = document.createElement("textarea");
+      area.value = text;
+      document.body.append(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+  };
+
+  // Shows `done` on the button for a moment.
+  const flash = (button) => {
+    button.innerHTML = svg("check");
+    button.classList.add("ok");
+    setTimeout(() => {
+      button.innerHTML = svg(button.dataset.icon);
+      button.classList.remove("ok");
+    }, 1200);
+  };
+
+  const ACTIONS = {
+    async fill(login, button) {
+      await call("vault_fill", { login });
+      flash(button);
+    },
+    async copy(login, button) {
+      await copy(await call("vault_password", { login }));
+      flash(button);
+    },
+    edit(login) {
+      openForm(login);
+    },
+    async delete(login, button) {
+      // Second click within 3 s confirms.
+      if (!button.classList.contains("confirm")) {
+        button.classList.add("confirm");
+        button.title = "Click again to delete";
+        setTimeout(() => {
+          button.classList.remove("confirm");
+          button.title = "Delete";
+        }, 3000);
+        return;
+      }
+      await call("vault_delete", { login });
+      if (editing && editing.origin === login.origin && editing.username === login.username) closeForm();
+      refresh();
+    },
+  };
+  const TITLES = { fill: "Fill into the page", copy: "Copy the password", edit: "Edit", delete: "Delete" };
+
+  const render = () => {
+    const query = $("search").value.trim().toLowerCase();
+    const shown = state.logins
+      .filter((l) => !query || l.origin.toLowerCase().includes(query) || l.username.toLowerCase().includes(query))
+      // Logins of the current page first.
+      .sort((a, b) => (b.origin === state.current) - (a.origin === state.current));
+    $("list").replaceChildren(
+      ...shown.map((login) => {
+        const here = login.origin === state.current;
+        const li = document.createElement("li");
+        const info = document.createElement("div");
+        info.className = "info";
+        const user = document.createElement("div");
+        user.className = "user" + (login.username ? "" : " none");
+        user.textContent = login.username || "no username";
+        const origin = document.createElement("div");
+        origin.className = "origin";
+        origin.textContent = login.origin.replace(/^https:\/\//, "");
+        origin.title = login.origin;
+        if (here) {
+          const badge = document.createElement("span");
+          badge.className = "here";
+          badge.textContent = "this page";
+          origin.append(badge);
+        }
+        info.append(user, origin);
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        for (const name of [...(here ? ["fill"] : []), "copy", "edit", "delete"]) {
+          const button = document.createElement("button");
+          button.dataset.icon = name;
+          button.title = TITLES[name];
+          button.innerHTML = svg(name);
+          button.addEventListener("click", () => Promise.resolve(ACTIONS[name](login, button)).catch(() => {}));
+          actions.append(button);
+        }
+        li.append(info, actions);
+        li.addEventListener("dblclick", (e) => {
+          if (!e.target.closest("button")) openForm(login);
+        });
+        return li;
+      }),
+    );
+    $("list").hidden = shown.length === 0;
+    $("empty").hidden = shown.length > 0;
+    $("empty").textContent = state.logins.length
+      ? "No matching login."
+      : "No saved login yet.\nLogins are kept in the system keyring.";
+    $("empty").style.whiteSpace = "pre-line";
+  };
+
+  async function refresh() {
+    try {
+      state = await call("vault_list");
+    } catch (_) {
+      return;
+    }
+    render();
+  }
+  window.vaultRefresh = refresh;
+
+  const openForm = (login) => {
+    editing = login || null;
+    $("form-title").textContent = login ? "Edit login" : "New login";
+    $("origin").value = login ? login.origin : state.current;
+    $("username").value = login ? login.username : "";
+    $("password").value = "";
+    $("password").type = "password";
+    $("password").placeholder = login ? "unchanged" : "";
+    $("password").required = !login;
+    $("form").hidden = false;
+    (login || !state.current ? (login ? $("password") : $("origin")) : $("username")).focus();
+  };
+  const closeForm = () => {
+    editing = null;
+    $("password").value = "";
+    $("form").hidden = true;
+  };
+
+  $("add").addEventListener("click", () => openForm(null));
+  $("cancel").addEventListener("click", closeForm);
+  $("toggle").addEventListener("click", async () => {
+    const show = $("password").type === "password";
+    // Editing with an empty field: shows the saved password.
+    if (show && editing && !$("password").value) {
+      try {
+        $("password").value = await call("vault_password", { login: editing });
+      } catch (_) {
+        return;
+      }
+    }
+    $("password").type = show ? "text" : "password";
+    $("toggle").title = show ? "Hide the password" : "Show the password";
+  });
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("save").disabled = true;
+    try {
+      await call("vault_save", {
+        login: { origin: $("origin").value, username: $("username").value },
+        password: $("password").value,
+        previous: editing,
+      });
+      closeForm();
+      refresh();
+    } catch (_) {
+    } finally {
+      $("save").disabled = false;
+    }
+  });
+  $("search").addEventListener("input", render);
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("form").hidden) closeForm();
+  });
+  window.addEventListener("focus", refresh);
+  refresh();
+</script>
+</body>
+</html>

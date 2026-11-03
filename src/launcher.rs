@@ -50,7 +50,9 @@ const NEW_CONFIG: &str = r##"# WebOverlay config: one [app] window per file. Scr
 # [app.header]
 # color = "#1e3a8a"                   # background (#rgb / #rrggbb), default: system theme
 # text_color = "#ffffff"              # default: light or dark, following `color`
-# hide = ["zoom", "edit"]             # back | forward | reload | home | favicon | title | url | zoom | downloads | edit | devtools | external
+# hide = ["zoom", "edit"]             # back | forward | reload | home | favicon | title | url | zoom | downloads | vault | edit | devtools | external
+# [app.vault]                         # logins saved in the system keyring, added from the header vault button
+# fill = "button"                     # button (default) | auto: on page load when one login matches the page
 "##;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

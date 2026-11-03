@@ -12,6 +12,7 @@ use crate::config::{HeaderConfig, HexColor, ZOOM_MAX, ZOOM_MIN};
 use crate::download;
 use crate::editor;
 use crate::icon;
+use crate::vault;
 use crate::window::{self, AppWindow};
 
 const ZOOM_STEP: f64 = 0.1;
@@ -175,6 +176,14 @@ pub fn app(handle: &AppHandle, label: &str) -> Option<Arc<AppWindow>> {
     lock(handle).get(label).map(|state| state.app.clone())
 }
 
+/// The app window of this process (label, app): one app per process, popups aren't registered.
+pub fn first_app(handle: &AppHandle) -> Option<(String, Arc<AppWindow>)> {
+    lock(handle)
+        .iter()
+        .next()
+        .map(|(label, state)| (label.clone(), state.app.clone()))
+}
+
 fn sanitize_favicon(url: &str) -> Option<String> {
     let parsed = Url::parse(url).ok()?;
     let ok = match parsed.scheme() {
@@ -280,6 +289,14 @@ pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
         }
         "downloads" => {
             download::open_later(handle);
+            Ok(())
+        }
+        "vault" => {
+            let app = lock(handle)
+                .get(&label)
+                .map(|s| s.app.clone())
+                .ok_or("unknown window")?;
+            vault::button(handle, &content, app);
             Ok(())
         }
         "minimize" => window.minimize(),

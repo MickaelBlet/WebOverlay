@@ -8,6 +8,7 @@ const HEADER_RE = /^[ \t]*(\[\[?)[ \t]*([A-Za-z0-9_.-]*)[ \t]*\]\]?/gm;
 function headerTable(double, name) {
   if (!double && name === "app") return "app";
   if (!double && name === "app.header") return "app.header";
+  if (!double && name === "app.vault") return "app.vault";
   if (double && name === "app.scripts") return "script";
   if (double && name === "app.styles") return "style";
   return "unknown";
@@ -16,7 +17,7 @@ function headerTable(double, name) {
 /** Table of an inline table / array of tables value of `key` in `parent`. */
 function nestedTable(parent, key) {
   if (parent !== "app") return "unknown";
-  return { scripts: "script", styles: "style", header: "app.header" }[key] || "unknown";
+  return { scripts: "script", styles: "style", header: "app.header", vault: "app.vault" }[key] || "unknown";
 }
 
 const isKeyChar = (c) => /[A-Za-z0-9_-]/.test(c);
@@ -158,7 +159,7 @@ function keyItem(k) {
   };
 }
 
-/** `[app]` / `[app.header]` snippets for a header line (each one only while missing). */
+/** `[app]` / `[app.header]` / `[app.vault]` snippets for a header line (each one only while missing). */
 function headerItems(v, pos) {
   const items = [];
   const appAt = v.search(/^[ \t]*\[app\][ \t]*(#.*)?$/m);
@@ -167,6 +168,9 @@ function headerItems(v, pos) {
     items.push({ label: "[app]", kind: KIND.table, detail: "app window", doc: app, insert: '[app]\nname = "$0"\nurl = "https://"' });
   } else if (appAt < pos && !/^[ \t]*\[app\.header\]/m.test(v) && !/^[ \t]*header[ \t]*=/m.test(v)) {
     items.push({ label: "[app.header]", kind: KIND.table, detail: "header options", doc: docOf("app", "header"), insert: "[app.header]\n$0" });
+  }
+  if (appAt >= 0 && appAt < pos && !/^[ \t]*\[app\.vault\]/m.test(v) && !/^[ \t]*vault[ \t]*=/m.test(v)) {
+    items.push({ label: "[app.vault]", kind: KIND.table, detail: "vault options", doc: docOf("app", "vault"), insert: "[app.vault]\n$0" });
   }
   return items;
 }
@@ -254,7 +258,8 @@ export function hover(v, pos) {
   const h = HEADER_RE.exec(line);
   if (h && pos - lineStart < h[0].length && pos - lineStart >= h[0].indexOf("[")) {
     const table = headerTable(h[1] === "[[", h[2]);
-    const doc = table === "app" ? docOf("root", "app") : table === "app.header" ? docOf("app", "header") : null;
+    const doc =
+      table === "app" ? docOf("root", "app") : table.startsWith("app.") ? docOf("app", table.slice(4)) : null;
     return doc && { html: docHtml(doc), start: lineStart + h[0].indexOf("["), end: lineStart + h[0].length };
   }
   if (isKeyChar(v[pos])) {

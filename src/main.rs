@@ -10,6 +10,7 @@ mod launcher;
 #[cfg(target_os = "linux")]
 mod linux;
 mod schema;
+mod vault;
 mod window;
 
 use std::path::{Path, PathBuf};
@@ -201,6 +202,11 @@ fn main() -> ExitCode {
             launcher::launcher_window,
             download::downloads_list,
             download::downloads_action,
+            vault::vault_list,
+            vault::vault_save,
+            vault::vault_delete,
+            vault::vault_password,
+            vault::vault_fill,
         ])
         .setup(move |app| {
             match launch.mode {

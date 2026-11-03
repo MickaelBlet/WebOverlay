@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Vault: logins (site, username, password) saved in the system keyring (Secret Service on Linux, Credential Manager on Windows) and managed in a vault window. The header key button fills the login saved for the page into its login form, or opens the vault; `[app.vault] fill = "auto"` also fills it on page load. `vault` header item for `hide`.
+
 ## [0.2.4] - 2026-11-02
 
 ### Fixed

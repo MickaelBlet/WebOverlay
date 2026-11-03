@@ -5,13 +5,14 @@
 Open any website as a standalone desktop webapp (Tauri 2) and inject your own JavaScript and CSS into it.
 
 - One config file per app window, isolated profile (cookies, storage) per app.
-- Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, edit config, developer tools, open in browser, window controls.
+- Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, vault, edit config, developer tools, open in browser, window controls.
   Shortcuts: Alt+←/→, F5 / Ctrl+R.
 - Site favicon (or the `icon` of the config) as header and window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon.
 - Scripts and styles injected on every page load, filtered by URL wildcards.
 - Built-in editor for the config and its script/style files (TOML/JS/CSS highlighting).
 - Off-host links and popups open in the system browser, except downloads (checked by fetching the URL once, without cookies), which stay in the app.
 - File downloads with a native "save as" dialog and a downloads window (progress, cancel, open, show in folder).
+- Vault: logins saved in the system keyring, filled into login forms from the header or on page load.
 - Remote pages get no Tauri IPC access.
 
 ## Prerequisites
@@ -84,15 +85,35 @@ scripts = [
 color = "#c5221f"                  # optional, background (#rgb / #rrggbb), default: system theme
 text_color = "#ffffff"             # optional, default: light or dark, following `color`
 hide = ["zoom", "edit"]            # optional, header items not shown
+
+[app.vault]                        # optional
+fill = "button"                    # optional, `button` (default) or `auto`
 ```
 
 | Field     | Values |
 | --------- | ------ |
 | `run_at`  | `document-start` (before page scripts), `document-end` (DOMContentLoaded, default), `document-idle` (load) |
 | `matches` | Wildcards (`*`) on `location.href`, case-insensitive; empty = every page |
-| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `downloads`, `edit`, `devtools`, `external` (window controls always stay) |
+| `fill`    | `button`: header vault button only (default); `auto`: also on page load when exactly one login is saved for the page origin |
+| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `downloads`, `vault`, `edit`, `devtools`, `external` (window controls always stay) |
 
 Paths are relative to the config file. Files are read at startup: restart the app after editing.
+
+## Vault
+
+The key button of the header fills the login saved for the page origin (`scheme://host[:port]`)
+into its login form (username and password, never submitted); with no login or several, it opens
+the vault window: add, edit, delete, copy the password, or fill one of the page's logins.
+`[app.vault] fill = "auto"` also fills on page load when exactly one login matches.
+
+- Passwords are stored in the system keyring: Secret Service on Linux (GNOME Keyring, KWallet,
+  KeePassXC…, which must be running), Credential Manager on Windows. One entry per login,
+  service `dev.blet.weboverlay`.
+- The list of logins (origins and usernames, no passwords) is kept in
+  `<local data dir>/weboverlay/vault/<app id>.json`, per app and config file.
+- Logins are entered by hand: forms submitted in the page are not captured.
+- A filled password is readable by every script of that origin, as with any password manager:
+  `auto` fills without asking, use it only on sites you trust.
 
 ## Launcher
 

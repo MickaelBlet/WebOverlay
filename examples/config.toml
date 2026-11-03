@@ -24,3 +24,7 @@ scripts = [
 color = "#1e3a8a"
 # text_color = "#ffffff"
 hide = ["zoom"]
+
+# Logins saved in the system keyring, added from the header vault button.
+[app.vault]
+fill = "button"                   # or "auto": fill on page load when one login matches the page

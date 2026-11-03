@@ -17,6 +17,7 @@ use crate::config::{AppConfig, HexColor};
 use crate::download;
 use crate::header;
 use crate::icon;
+use crate::vault;
 
 pub const HEADER_HEIGHT: f64 = 30.0;
 
@@ -156,6 +157,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
             // Hidden until then: WebView2 / WebKit paint white before the first frame.
             let _ = webview.show();
             header::refresh_favicon(&webview);
+            vault::autofill(&webview);
         }
         let window = webview.window();
         header::set_page(

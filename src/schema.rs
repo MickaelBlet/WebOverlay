@@ -5,7 +5,7 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct KeyDoc {
-    /// `root`, `app`, `app.header`, `script` (`scripts` items) or `style` (`styles` items).
+    /// `root`, `app`, `app.header`, `app.vault`, `script` (`scripts` items) or `style` (`styles` items).
     pub table: &'static str,
     pub key: &'static str,
     #[serde(rename = "type")]
@@ -97,6 +97,10 @@ const HEADER_ITEMS: &[ValueDoc] = &[
         doc: "Downloads button (shown once a file was downloaded).",
     },
     ValueDoc {
+        value: "vault",
+        doc: "Vault button (fills the saved login of the page, else opens the vault).",
+    },
+    ValueDoc {
         value: "edit",
         doc: "Edit config button.",
     },
@@ -107,6 +111,18 @@ const HEADER_ITEMS: &[ValueDoc] = &[
     ValueDoc {
         value: "devtools",
         doc: "Developer tools (web inspector / console) button.",
+    },
+];
+
+const VAULT_FILL: &[ValueDoc] = &[
+    ValueDoc {
+        value: "button",
+        doc: "With the header vault button only (default).",
+    },
+    ValueDoc {
+        value: "auto",
+        doc: "On page load when exactly one login is saved for the page origin. Any script of \
+              that origin can then read the password: use it only on sites you trust.",
     },
 ];
 
@@ -328,6 +344,26 @@ pub static SCHEMA: &[KeyDoc] = &[
             "[\"$0\"]",
         )
     },
+    key(
+        "app",
+        "vault",
+        "table",
+        None,
+        "Vault options, usually written as an `[app.vault]` table. Logins are added in the \
+         vault window (header vault button) and saved in the system keyring.",
+        "{ $0 }",
+    ),
+    KeyDoc {
+        values: VAULT_FILL,
+        ..key(
+            "app.vault",
+            "fill",
+            "string",
+            Some("\"button\""),
+            "When saved logins are filled into the login form of the page.",
+            "\"$0\"",
+        )
+    },
     KeyDoc {
         required: true,
         ..key(
@@ -395,10 +431,13 @@ mod tests {
         };
         SCHEMA
             .iter()
-            .filter(|k| k.table == table && !matches!(k.key, "scripts" | "styles" | "header"))
+            .filter(|k| {
+                k.table == table && !matches!(k.key, "scripts" | "styles" | "header" | "vault")
+            })
             .map(|k| match k.key {
                 "run_at" => format!("{} = \"document-idle\"", k.key),
                 "hide" => format!("{} = [\"zoom\"]", k.key),
+                "fill" => format!("{} = \"auto\"", k.key),
                 "width" | "height" | "zoom" | "maximized" | "center" => {
                     format!("{} = {}", k.key, k.example.replace("$0", ""))
                 }
@@ -410,11 +449,12 @@ mod tests {
     #[test]
     fn every_key_parses() {
         let text = format!(
-            "[app]\n{}\nscripts = [{{ {} }}]\nstyles = [{{ {} }}]\n[app.header]\n{}\n",
+            "[app]\n{}\nscripts = [{{ {} }}]\nstyles = [{{ {} }}]\n[app.header]\n{}\n[app.vault]\n{}\n",
             entries("app").join("\n"),
             entries("script").join(", "),
             entries("style").join(", "),
             entries("app.header").join("\n"),
+            entries("app.vault").join("\n"),
         );
         let config = Config::parse(&text).unwrap_or_else(|e| panic!("{e:#}\n{text}"));
         let app = config.app.as_ref().unwrap();
@@ -422,6 +462,7 @@ mod tests {
         assert_eq!(app.scripts[0].matches, ["a"]);
         assert_eq!(app.styles.len(), 1);
         assert!(app.header.text_color.is_some());
+        assert_eq!(app.vault.fill, crate::config::VaultFill::Auto);
         // The snippets of the nested tables are valid TOML values too.
         for key in ["scripts", "styles"] {
             let example = SCHEMA.iter().find(|k| k.key == key).unwrap().example;
@@ -462,6 +503,12 @@ mod tests {
         );
         let config = Config::parse(&text).unwrap();
         assert_eq!(config.app.as_ref().unwrap().open_downloads, open_downloads);
+        for fill in values("fill") {
+            let text = format!(
+                "[app]\nname = \"a\"\nurl = \"https://a.com\"\nvault = {{ fill = \"{fill}\" }}"
+            );
+            Config::parse(&text).unwrap_or_else(|e| panic!("{fill}: {e:#}"));
+        }
         for maximized in values("maximized") {
             let text =
                 format!("[app]\nname = \"a\"\nurl = \"https://a.com\"\nmaximized = {maximized}");

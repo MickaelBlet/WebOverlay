@@ -69,6 +69,27 @@ pub struct AppConfig {
     pub styles: Vec<StyleEntry>,
     #[serde(default)]
     pub header: HeaderConfig,
+    #[serde(default)]
+    pub vault: VaultConfig,
+}
+
+/// `[app.vault]`: logins saved in the system keyring (`vault.rs`).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VaultConfig {
+    #[serde(default)]
+    pub fill: VaultFill,
+}
+
+/// When saved logins are filled into the login forms of the content.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VaultFill {
+    /// With the header `vault` button only.
+    #[default]
+    Button,
+    /// On page load when exactly one login is saved for the page origin (the button still works).
+    Auto,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -94,6 +115,7 @@ pub enum HeaderItem {
     Url,
     Zoom,
     Downloads,
+    Vault,
     Edit,
     External,
     Devtools,
@@ -471,6 +493,25 @@ mod tests {
                 format!("[app]\nname = \"a\"\nurl = \"https://a.com\"\nopen_downloads = [{bad:?}]");
             assert!(Config::parse(&text).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn parses_vault() {
+        let base = "[app]\nname = \"a\"\nurl = \"https://a.com\"\n";
+        let fill = |extra: &str| {
+            Config::parse(&format!("{base}{extra}")).map(|c| c.app.unwrap().vault.fill)
+        };
+        assert_eq!(fill("").unwrap(), VaultFill::Button);
+        assert_eq!(
+            fill("[app.vault]\nfill = \"auto\"").unwrap(),
+            VaultFill::Auto
+        );
+        assert_eq!(
+            fill("vault = { fill = \"button\" }").unwrap(),
+            VaultFill::Button
+        );
+        assert!(fill("[app.vault]\nfill = \"always\"").is_err());
+        assert!(fill("[app.vault]\nother = 1").is_err());
     }
 
     #[test]

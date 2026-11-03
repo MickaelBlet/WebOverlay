@@ -293,7 +293,7 @@ fn set_taskbar_icon(window: &tauri::Window, icon: &Image<'_>) {
 /// Identity of app `name` of the config at (absolute) `config_path`:
 /// `dev.blet.weboverlay.<config path hash>.<name>`, so apps with the same name in different configs
 /// get their own taskbar button, pin and cached icon.
-fn app_id(config_path: &Path, name: &str) -> String {
+pub fn app_id(config_path: &Path, name: &str) -> String {
     // Windows paths are case-insensitive.
     let hash = fnv1a(config_path.to_string_lossy().to_lowercase().as_bytes());
     let mut id = format!("dev.blet.weboverlay.{hash:016x}.{name}");
