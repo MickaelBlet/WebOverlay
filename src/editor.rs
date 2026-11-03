@@ -773,6 +773,14 @@ pub fn editor_pin(webview: Webview, pinned: bool) -> Result<bool, String> {
     Ok(pinned)
 }
 
+/// Opens the vault window (logins of the app of the config).
+#[tauri::command]
+pub fn editor_vault(webview: Webview) -> Result<(), String> {
+    check_caller(&webview)?;
+    crate::vault::open_later(webview.app_handle());
+    Ok(())
+}
+
 /// Window controls of the undecorated editor (its page draws the title bar); `force_close`
 /// closes it without asking. Returns whether the window is maximized.
 #[tauri::command]

@@ -17,7 +17,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Url, Webview, WebviewUrl, WebviewWindowBuilder};
 
-use crate::config::VaultFill;
+use crate::config::{Config, VaultFill};
+use crate::editor;
 use crate::header;
 use crate::icon;
 use crate::window::{self, show_when_loaded, theme_color, AppWindow, PAGE_BG};
@@ -66,9 +67,9 @@ fn store() -> Result<(), String> {
     Ok(())
 }
 
-fn entry(app: &AppWindow, login: &Login) -> Result<keyring_core::Entry, String> {
+fn entry(id: &str, login: &Login) -> Result<keyring_core::Entry, String> {
     store()?;
-    let user = format!("{}|{}|{}", app_id(app), login.origin, login.username);
+    let user = format!("{id}|{}|{}", login.origin, login.username);
     keyring_core::Entry::new(SERVICE, &user).map_err(keyring_error)
 }
 
@@ -79,20 +80,21 @@ fn keyring_error(e: keyring_core::Error) -> String {
     }
 }
 
+/// Vault id of `app`: its AppUserModelID (config path hash + name).
 fn app_id(app: &AppWindow) -> String {
     icon::app_id(&app.config_path, &app.config.name)
 }
 
-fn index_path(app: &AppWindow) -> Result<PathBuf, String> {
+fn index_path(id: &str) -> Result<PathBuf, String> {
     let dir = dirs::data_local_dir().ok_or("no local data directory")?;
     Ok(dir
         .join("weboverlay")
         .join("vault")
-        .join(format!("{}.json", app_id(app))))
+        .join(format!("{id}.json")))
 }
 
-fn read_index(app: &AppWindow) -> Result<Vec<Login>, String> {
-    let path = index_path(app)?;
+fn read_index(id: &str) -> Result<Vec<Login>, String> {
+    let path = index_path(id)?;
     match fs::read(&path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
@@ -100,8 +102,8 @@ fn read_index(app: &AppWindow) -> Result<Vec<Login>, String> {
     }
 }
 
-fn write_index(app: &AppWindow, logins: &[Login]) -> Result<(), String> {
-    let path = index_path(app)?;
+fn write_index(id: &str, logins: &[Login]) -> Result<(), String> {
+    let path = index_path(id)?;
     let error = |e: std::io::Error| format!("{}: {e}", path.display());
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(error)?;
@@ -113,18 +115,18 @@ fn write_index(app: &AppWindow, logins: &[Login]) -> Result<(), String> {
     fs::rename(&tmp, &path).map_err(error)
 }
 
-/// Logins of `app`, sorted by origin then username.
-pub fn list(app: &AppWindow) -> Result<Vec<Login>, String> {
+/// Logins of vault `id`, sorted by origin then username.
+fn list(id: &str) -> Result<Vec<Login>, String> {
     let _guard = INDEX.lock().unwrap_or_else(|e| e.into_inner());
-    let mut logins = read_index(app)?;
+    let mut logins = read_index(id)?;
     logins.sort_by(|a, b| (&a.origin, &a.username).cmp(&(&b.origin, &b.username)));
     Ok(logins)
 }
 
-/// Logins of `app` for the origin of `url`.
-fn matching(app: &AppWindow, url: &Url) -> Result<Vec<Login>, String> {
+/// Logins of vault `id` for the origin of `url`.
+fn matching(id: &str, url: &Url) -> Result<Vec<Login>, String> {
     let origin = url.origin().ascii_serialization();
-    Ok(list(app)?
+    Ok(list(id)?
         .into_iter()
         .filter(|login| login.origin == origin)
         .collect())
@@ -132,18 +134,13 @@ fn matching(app: &AppWindow, url: &Url) -> Result<Vec<Login>, String> {
 
 /// Saves a login, replacing `previous` (edit) when given. An empty `password` keeps the one of
 /// `previous`.
-pub fn save(
-    app: &AppWindow,
-    login: Login,
-    password: &str,
-    previous: Option<Login>,
-) -> Result<(), String> {
+fn save(id: &str, login: Login, password: &str, previous: Option<Login>) -> Result<(), String> {
     let login = Login {
         origin: origin_of(&login.origin)?,
         username: login.username.trim().to_owned(),
     };
     let _guard = INDEX.lock().unwrap_or_else(|e| e.into_inner());
-    let mut logins = read_index(app)?;
+    let mut logins = read_index(id)?;
     if previous.as_ref() != Some(&login) && logins.contains(&login) {
         return Err(format!(
             "a login for {:?} on {} is already saved",
@@ -151,51 +148,49 @@ pub fn save(
         ));
     }
     let password = match (&previous, password) {
-        (Some(previous), "") => entry(app, previous)?
-            .get_password()
-            .map_err(keyring_error)?,
+        (Some(previous), "") => entry(id, previous)?.get_password().map_err(keyring_error)?,
         (None, "") => return Err("the password is empty".into()),
         (_, password) => password.to_owned(),
     };
-    entry(app, &login)?
+    entry(id, &login)?
         .set_password(&password)
         .map_err(keyring_error)?;
     if let Some(previous) = previous.filter(|previous| *previous != login) {
-        delete_secret(app, &previous)?;
+        delete_secret(id, &previous)?;
         logins.retain(|l| *l != previous);
     }
     if !logins.contains(&login) {
         logins.push(login);
     }
-    write_index(app, &logins)
+    write_index(id, &logins)
 }
 
-fn delete_secret(app: &AppWindow, login: &Login) -> Result<(), String> {
-    match entry(app, login)?.delete_credential() {
+fn delete_secret(id: &str, login: &Login) -> Result<(), String> {
+    match entry(id, login)?.delete_credential() {
         Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
         Err(e) => Err(keyring_error(e)),
     }
 }
 
-pub fn delete(app: &AppWindow, login: &Login) -> Result<(), String> {
+fn delete(id: &str, login: &Login) -> Result<(), String> {
     let _guard = INDEX.lock().unwrap_or_else(|e| e.into_inner());
-    delete_secret(app, login)?;
-    let mut logins = read_index(app)?;
+    delete_secret(id, login)?;
+    let mut logins = read_index(id)?;
     logins.retain(|l| l != login);
-    write_index(app, &logins)
+    write_index(id, &logins)
 }
 
-fn password(app: &AppWindow, login: &Login) -> Result<String, String> {
-    entry(app, login)?.get_password().map_err(keyring_error)
+fn password(id: &str, login: &Login) -> Result<String, String> {
+    entry(id, login)?.get_password().map_err(keyring_error)
 }
 
 /// Fills `login` into the login form of the content page. Blocking (keyring).
-fn fill(content: &Webview, app: &AppWindow, login: &Login) -> Result<(), String> {
+fn fill(content: &Webview, id: &str, login: &Login) -> Result<(), String> {
     let url = content.url().map_err(|e| e.to_string())?;
     if url.origin().ascii_serialization() != login.origin {
         return Err(format!("the page is not on {}", login.origin));
     }
-    let password = password(app, login)?;
+    let password = password(id, login)?;
     content
         .eval(fill_script(&login.origin, &login.username, &password))
         .map_err(|e| e.to_string())
@@ -261,9 +256,10 @@ pub fn autofill(content: &Webview) {
     }
     let content = content.clone();
     std::thread::spawn(move || {
+        let id = app_id(&app);
         let Ok(url) = content.url() else { return };
-        if let Ok([login]) = matching(&app, &url).as_deref() {
-            if let Err(e) = fill(&content, &app, login) {
+        if let Ok([login]) = matching(&id, &url).as_deref() {
+            if let Err(e) = fill(&content, &id, login) {
                 eprintln!("weboverlay: vault: {e}");
             }
         }
@@ -276,16 +272,27 @@ pub fn button(handle: &AppHandle, content: &Webview, app: Arc<AppWindow>) {
     let handle = handle.clone();
     let content = content.clone();
     std::thread::spawn(move || {
+        let id = app_id(&app);
         let logins = content
             .url()
             .map_err(|e| e.to_string())
-            .and_then(|url| matching(&app, &url));
+            .and_then(|url| matching(&id, &url));
         if let Ok([login]) = logins.as_deref() {
-            match fill(&content, &app, login) {
+            match fill(&content, &id, login) {
                 Ok(()) => return,
                 Err(e) => eprintln!("weboverlay: vault: {e}"),
             }
         }
+        if let Err(e) = open(&handle) {
+            eprintln!("weboverlay: cannot open the vault window: {e}");
+        }
+    });
+}
+
+/// `open` from a worker thread (see `editor::open_later`).
+pub fn open_later(handle: &AppHandle) {
+    let handle = handle.clone();
+    std::thread::spawn(move || {
         if let Err(e) = open(&handle) {
             eprintln!("weboverlay: cannot open the vault window: {e}");
         }
@@ -315,17 +322,38 @@ fn open(handle: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The app window of this process (one app per process) and its content webview.
-fn current(webview: &Webview) -> Result<(Arc<AppWindow>, Webview), String> {
+/// Vault of the app of this process.
+struct Current {
+    id: String,
+    content: Option<Webview>,
+    /// Origin of the app `url`.
+    home: String,
+}
+
+/// Vault id, content webview and home origin of the app of this process (one app per process). Without app
+/// window (editor-only process, `--edit`), the app of the edited config: logins can be managed,
+/// not filled.
+fn current(webview: &Webview) -> Result<Current, String> {
     if webview.label() != VAULT_LABEL {
         return Err("not allowed".into());
     }
     let handle = webview.app_handle();
-    let (label, app) = header::first_app(handle).ok_or("no app window")?;
-    let content = handle
-        .get_webview(&window::content_label(&label))
-        .ok_or("no content webview")?;
-    Ok((app, content))
+    if let Some((label, app)) = header::first_app(handle) {
+        return Ok(Current {
+            id: app_id(&app),
+            content: handle.get_webview(&window::content_label(&label)),
+            home: app.config.url.origin().ascii_serialization(),
+        });
+    }
+    let path = handle.state::<editor::Editor>().config_path();
+    let path = std::path::absolute(&path).unwrap_or(path);
+    let config = Config::load(&path).map_err(|e| format!("{e:#}"))?;
+    let app = config.app.ok_or("the config has no [app]")?;
+    Ok(Current {
+        id: icon::app_id(&path, &app.name),
+        content: None,
+        home: app.url.origin().ascii_serialization(),
+    })
 }
 
 /// Runs blocking keyring work off the async runtime.
@@ -339,23 +367,25 @@ async fn blocking<T: Send + 'static>(
 
 #[derive(Serialize)]
 pub struct VaultView {
-    /// Origin of the content page (empty when not http(s)).
+    /// Origin of the content page (empty when not http(s) or the app is not running).
     current: String,
+    /// Origin of the app `url`, default site of a new login.
+    home: String,
     logins: Vec<Login>,
 }
 
 #[tauri::command]
 pub async fn vault_list(webview: Webview) -> Result<VaultView, String> {
-    let (app, content) = current(&webview)?;
+    let Current { id, content, home } = current(&webview)?;
     let current = content
-        .url()
-        .ok()
+        .and_then(|content| content.url().ok())
         .and_then(|url| origin_of(url.as_str()).ok())
         .unwrap_or_default();
     blocking(move || {
         Ok(VaultView {
             current,
-            logins: list(&app)?,
+            home,
+            logins: list(&id)?,
         })
     })
     .await
@@ -368,26 +398,27 @@ pub async fn vault_save(
     password: String,
     previous: Option<Login>,
 ) -> Result<(), String> {
-    let (app, _) = current(&webview)?;
-    blocking(move || save(&app, login, &password, previous)).await
+    let id = current(&webview)?.id;
+    blocking(move || save(&id, login, &password, previous)).await
 }
 
 #[tauri::command]
 pub async fn vault_delete(webview: Webview, login: Login) -> Result<(), String> {
-    let (app, _) = current(&webview)?;
-    blocking(move || delete(&app, &login)).await
+    let id = current(&webview)?.id;
+    blocking(move || delete(&id, &login)).await
 }
 
 #[tauri::command]
 pub async fn vault_password(webview: Webview, login: Login) -> Result<String, String> {
-    let (app, _) = current(&webview)?;
-    blocking(move || password(&app, &login)).await
+    let id = current(&webview)?.id;
+    blocking(move || password(&id, &login)).await
 }
 
 #[tauri::command]
 pub async fn vault_fill(webview: Webview, login: Login) -> Result<(), String> {
-    let (app, content) = current(&webview)?;
-    blocking(move || fill(&content, &app, &login)).await
+    let Current { id, content, .. } = current(&webview)?;
+    let content = content.ok_or("the app is not running")?;
+    blocking(move || fill(&content, &id, &login)).await
 }
 
 #[cfg(test)]

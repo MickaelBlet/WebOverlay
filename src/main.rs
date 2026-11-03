@@ -182,6 +182,7 @@ fn main() -> ExitCode {
             editor::editor_schema,
             editor::editor_check,
             editor::editor_pin,
+            editor::editor_vault,
             editor::editor_window,
             editor::editor_dirty,
             editor::editor_add,

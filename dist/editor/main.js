@@ -571,6 +571,10 @@ async function togglePin() {
   }
 }
 
+function openVault() {
+  invoke("editor_vault").catch((e) => setMessage(String(e), "error"));
+}
+
 /** Ctrl+Tab: next tab of the active group in most-recently-used order. */
 function cycleFile(dir) {
   const list = mru.filter((m) => pane.tabs.includes(m)).concat(pane.tabs.filter((t) => !mru.includes(t)));
@@ -646,6 +650,7 @@ register([
   { id: "closeAll", label: "View: Close All Editors in Group", keys: ["ctrl+k ctrl+w"], run: () => closeMany(pane, [...pane.tabs]) },
   { id: "restart", label: "WebOverlay: Restart", run: restart },
   { id: "pin", label: "View: Toggle Always on Top", run: togglePin },
+  { id: "vault", label: "WebOverlay: Manage Logins (Vault)", run: openVault },
   { id: "nextFile", label: "View: Open Next Recently Used Editor", keys: ["ctrl+tab"], run: () => cycleFile(1) },
   { id: "prevFile", label: "View: Open Previous Recently Used Editor", keys: ["ctrl+shift+tab"], run: () => cycleFile(-1) },
   { id: "nextTab", label: "View: Open Next Editor", keys: ["ctrl+pagedown"], run: () => nextTab(1) },
@@ -735,6 +740,7 @@ on("openFileIn", (path, i) => openFile(path, state.panes[i] || pane));
 $("save").addEventListener("click", save);
 $("restart").addEventListener("click", restart);
 $("pin").addEventListener("click", togglePin);
+$("vault").addEventListener("click", openVault);
 $("pos").addEventListener("click", () => runCommand("goToLine"));
 
 setPane(createPane());

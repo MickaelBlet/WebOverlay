@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Vault: logins (site, username, password) saved in the system keyring (Secret Service on Linux, Credential Manager on Windows) and managed in a vault window. The header key button fills the login saved for the page into its login form, or opens the vault; `[app.vault] fill = "auto"` also fills it on page load. `vault` header item for `hide`.
+- Vault: logins (site, username, password) saved in the system keyring (Secret Service on Linux, Credential Manager on Windows) and managed in a vault window. The header key button fills the login saved for the page into its login form, or opens the vault; `[app.vault] fill = "auto"` also fills it on page load. `vault` header item for `hide`. The config editor opens the vault too (key button, `WebOverlay: Manage Logins (Vault)` command), also without the app running.
 
 ## [0.2.4] - 2026-11-02
 

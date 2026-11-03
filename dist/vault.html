@@ -180,7 +180,7 @@
   };
   const svg = (name) => `<svg viewBox="0 0 24 24">${ICONS[name]}</svg>`;
 
-  let state = { current: "", logins: [] };
+  let state = { current: "", home: "", logins: [] };
   // Login being edited (null: new one).
   let editing = null;
 
@@ -316,14 +316,14 @@
   const openForm = (login) => {
     editing = login || null;
     $("form-title").textContent = login ? "Edit login" : "New login";
-    $("origin").value = login ? login.origin : state.current;
+    $("origin").value = login ? login.origin : state.current || state.home;
     $("username").value = login ? login.username : "";
     $("password").value = "";
     $("password").type = "password";
     $("password").placeholder = login ? "unchanged" : "";
     $("password").required = !login;
     $("form").hidden = false;
-    (login || !state.current ? (login ? $("password") : $("origin")) : $("username")).focus();
+    (login ? $("password") : $("origin").value ? $("username") : $("origin")).focus();
   };
   const closeForm = () => {
     editing = null;

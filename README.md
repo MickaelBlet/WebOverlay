@@ -105,6 +105,8 @@ The key button of the header fills the login saved for the page origin (`scheme:
 into its login form (username and password, never submitted); with no login or several, it opens
 the vault window: add, edit, delete, copy the password, or fill one of the page's logins.
 `[app.vault] fill = "auto"` also fills on page load when exactly one login matches.
+The key button of the editor title bar (or the `WebOverlay: Manage Logins (Vault)` command)
+always opens the vault, also when the app is not running (`--edit`).
 
 - Passwords are stored in the system keyring: Secret Service on Linux (GNOME Keyring, KWallet,
   KeePassXC…, which must be running), Credential Manager on Windows. One entry per login,
