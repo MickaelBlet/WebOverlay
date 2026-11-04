@@ -373,9 +373,13 @@ fn add_config(list: Vec<PathBuf>, path: PathBuf) -> Vec<PathBuf> {
     list
 }
 
-/// Starts this executable with `args`; the child is reaped from a thread.
-fn spawn(args: Vec<OsString>) -> Result<(), String> {
+/// Starts this executable with `args` (and `--password-store basic` when given to this one);
+/// the child is reaped from a thread.
+fn spawn(mut args: Vec<OsString>) -> Result<(), String> {
     let exe = config::exe_path().ok_or("cannot determine the executable path")?;
+    if crate::vault::basic() {
+        args.push("--password-store=basic".into());
+    }
     let mut child = Command::new(&exe)
         .args(args)
         .spawn()

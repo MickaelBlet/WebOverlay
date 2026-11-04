@@ -9,10 +9,15 @@
 //! Passwords reach a page only through `fill_script`, evaluated in the content after its origin
 //! was checked against the login's (again by the script itself, against a navigation race).
 //! Keyring calls may block (D-Bus, unlock prompt): they run off the main thread.
+//!
+//! `--password-store basic` (Linux, like Chromium's) keeps the passwords in a plaintext file
+//! readable by the user only, `<app id>.basic-secrets.json`, with its own index
+//! `<app id>.basic.json`: the two stores never mix.
 
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Url, Webview, WebviewUrl, WebviewWindowBuilder};
@@ -30,6 +35,18 @@ const SERVICE: &str = "dev.blet.weboverlay";
 
 /// Serializes the index read-modify-write cycles.
 static INDEX: Mutex<()> = Mutex::new(());
+
+/// `--password-store basic`: passwords in a plaintext file instead of the keyring.
+static BASIC: OnceLock<bool> = OnceLock::new();
+
+/// Set once from the command line, before any vault call.
+pub fn set_basic(basic: bool) {
+    let _ = BASIC.set(basic);
+}
+
+pub fn basic() -> bool {
+    BASIC.get().copied().unwrap_or(false)
+}
 
 /// A saved login (the password stays in the keyring).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,34 +102,91 @@ fn app_id(app: &AppWindow) -> String {
     icon::app_id(&app.config_path, &app.config.name)
 }
 
-fn index_path(id: &str) -> Result<PathBuf, String> {
+fn vault_dir() -> Result<PathBuf, String> {
     let dir = dirs::data_local_dir().ok_or("no local data directory")?;
-    Ok(dir
-        .join("weboverlay")
-        .join("vault")
-        .join(format!("{id}.json")))
+    Ok(dir.join("weboverlay").join("vault"))
+}
+
+fn index_path(id: &str) -> Result<PathBuf, String> {
+    let name = if basic() {
+        format!("{id}.basic.json")
+    } else {
+        format!("{id}.json")
+    };
+    Ok(vault_dir()?.join(name))
 }
 
 fn read_index(id: &str) -> Result<Vec<Login>, String> {
-    let path = index_path(id)?;
-    match fs::read(&path) {
+    read_json(&index_path(id)?)
+}
+
+fn write_index(id: &str, logins: &[Login]) -> Result<(), String> {
+    write_json(&index_path(id)?, &logins)
+}
+
+/// Contents of `path`, default when missing.
+fn read_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> Result<T, String> {
+    match fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
 }
 
-fn write_index(id: &str, logins: &[Login]) -> Result<(), String> {
-    let path = index_path(id)?;
+/// Writes `value` to `path`, readable by the user only on Unix (the basic store holds
+/// passwords).
+fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), String> {
     let error = |e: std::io::Error| format!("{}: {e}", path.display());
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(error)?;
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(dir).map_err(error)?;
     }
-    let json = serde_json::to_vec_pretty(logins).expect("logins serialize");
-    // Written next to the index, then renamed: never a truncated index.
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, json).map_err(error)?;
-    fs::rename(&tmp, &path).map_err(error)
+    let json = serde_json::to_vec_pretty(value).expect("vault json serializes");
+    // Written next to the file, then renamed: never a truncated file.
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    std::io::Write::write_all(&mut options.open(&tmp).map_err(error)?, &json).map_err(error)?;
+    fs::rename(&tmp, path).map_err(error)
+}
+
+fn secrets_path(id: &str) -> Result<PathBuf, String> {
+    Ok(vault_dir()?.join(format!("{id}.basic-secrets.json")))
+}
+
+/// Key of `login` in the basic store.
+fn secret_key(login: &Login) -> String {
+    format!("{}|{}", login.origin, login.username)
+}
+
+fn get_secret(id: &str, login: &Login) -> Result<String, String> {
+    if basic() {
+        let secrets: BTreeMap<String, String> = read_json(&secrets_path(id)?)?;
+        return secrets
+            .get(&secret_key(login))
+            .cloned()
+            .ok_or_else(|| "password not found in the vault file".into());
+    }
+    entry(id, login)?.get_password().map_err(keyring_error)
+}
+
+fn set_secret(id: &str, login: &Login, password: &str) -> Result<(), String> {
+    if basic() {
+        let path = secrets_path(id)?;
+        let mut secrets: BTreeMap<String, String> = read_json(&path)?;
+        secrets.insert(secret_key(login), password.to_owned());
+        return write_json(&path, &secrets);
+    }
+    entry(id, login)?
+        .set_password(password)
+        .map_err(keyring_error)
 }
 
 /// Logins of vault `id`, sorted by origin then username.
@@ -148,13 +222,11 @@ fn save(id: &str, login: Login, password: &str, previous: Option<Login>) -> Resu
         ));
     }
     let password = match (&previous, password) {
-        (Some(previous), "") => entry(id, previous)?.get_password().map_err(keyring_error)?,
+        (Some(previous), "") => get_secret(id, previous)?,
         (None, "") => return Err("the password is empty".into()),
         (_, password) => password.to_owned(),
     };
-    entry(id, &login)?
-        .set_password(&password)
-        .map_err(keyring_error)?;
+    set_secret(id, &login, &password)?;
     if let Some(previous) = previous.filter(|previous| *previous != login) {
         delete_secret(id, &previous)?;
         logins.retain(|l| *l != previous);
@@ -166,6 +238,14 @@ fn save(id: &str, login: Login, password: &str, previous: Option<Login>) -> Resu
 }
 
 fn delete_secret(id: &str, login: &Login) -> Result<(), String> {
+    if basic() {
+        let path = secrets_path(id)?;
+        let mut secrets: BTreeMap<String, String> = read_json(&path)?;
+        if secrets.remove(&secret_key(login)).is_some() {
+            write_json(&path, &secrets)?;
+        }
+        return Ok(());
+    }
     match entry(id, login)?.delete_credential() {
         Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
         Err(e) => Err(keyring_error(e)),
@@ -181,7 +261,7 @@ fn delete(id: &str, login: &Login) -> Result<(), String> {
 }
 
 fn password(id: &str, login: &Login) -> Result<String, String> {
-    entry(id, login)?.get_password().map_err(keyring_error)
+    get_secret(id, login)
 }
 
 /// Fills `login` into the login form of the content page. Blocking (keyring).
@@ -424,6 +504,27 @@ pub async fn vault_fill(webview: Webview, login: Login) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn json_files_are_private() {
+        let dir = std::env::temp_dir().join(format!("weboverlay-vault-{}", std::process::id()));
+        let path = dir.join("sub").join("x.basic-secrets.json");
+        let mut secrets = BTreeMap::new();
+        secrets.insert("https://a.com|me".to_owned(), "pw".to_owned());
+        write_json(&path, &secrets).unwrap();
+        let read: BTreeMap<String, String> = read_json(&path).unwrap();
+        assert_eq!(read, secrets);
+        let missing: BTreeMap<String, String> = read_json(&dir.join("none.json")).unwrap();
+        assert!(missing.is_empty());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&path), 0o600);
+            assert_eq!(mode(path.parent().unwrap()), 0o700);
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn origins() {

@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Linux: `--password-store=basic` (as in Chromium) keeps the vault passwords in a plaintext file readable by the user only, for systems without a Secret Service; its logins are separate from the keyring ones. The launcher forwards it to the apps and editors it opens.
+
 ## [0.2.5] - 2026-11-04
 
 ### Added

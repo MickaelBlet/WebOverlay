@@ -23,7 +23,7 @@ use crate::config::Config;
 use crate::window::AppWindow;
 
 const USAGE: &str = "\
-Usage: weboverlay [--config <path>] [--list] [--edit] [--maximized]
+Usage: weboverlay [--config <path>] [--list] [--edit] [--maximized] [--password-store <store>]
 
 Opens the app of the config (one app per config file). Without --config, opens the launcher
 (recent apps and the apps of the local configs).
@@ -34,6 +34,9 @@ Options:
   -l, --list           Print the app of the config and exit
   -e, --edit           Open the config editor only (works with a missing or invalid config)
   -m, --maximized      Start the windows maximized (overrides the config)
+  --password-store <store>
+                       Linux: where the vault keeps passwords: keyring (Secret Service,
+                       default) or basic (plaintext file readable by your user only)
   -h, --help           Show this help";
 
 struct Args {
@@ -41,17 +44,35 @@ struct Args {
     list: bool,
     edit: bool,
     maximized: bool,
+    /// `--password-store basic`.
+    basic_store: bool,
 }
 
-fn parse_args() -> Result<Option<Args>> {
+/// Value of `--password-store`: `true` for `basic`.
+fn password_store(value: &str) -> Result<bool> {
+    if !cfg!(target_os = "linux") {
+        bail!("--password-store is Linux only");
+    }
+    match value {
+        "basic" => Ok(true),
+        "keyring" => Ok(false),
+        other => bail!("unknown password store {other:?} (keyring or basic)"),
+    }
+}
+
+fn parse_args(mut it: impl Iterator<Item = String>) -> Result<Option<Args>> {
     let mut args = Args {
         config: None,
         list: false,
         edit: false,
         maximized: false,
+        basic_store: false,
     };
-    let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
+        if let Some(value) = arg.strip_prefix("--password-store=") {
+            args.basic_store = password_store(value)?;
+            continue;
+        }
         match arg.as_str() {
             "-h" | "--help" => {
                 println!("{USAGE}");
@@ -62,6 +83,10 @@ fn parse_args() -> Result<Option<Args>> {
             "-m" | "--maximized" => args.maximized = true,
             "-c" | "--config" => {
                 args.config = Some(it.next().context("--config needs a path")?.into());
+            }
+            "--password-store" => {
+                let value = it.next().context("--password-store needs a value")?;
+                args.basic_store = password_store(&value)?;
             }
             flag if flag.starts_with('-') => bail!("unknown option {flag}\n\n{USAGE}"),
             other => bail!("unexpected argument {other:?} (one app per config)\n\n{USAGE}"),
@@ -86,9 +111,10 @@ struct Launch {
 }
 
 fn prepare() -> Result<Option<Launch>> {
-    let Some(args) = parse_args()? else {
+    let Some(args) = parse_args(std::env::args().skip(1))? else {
         return Ok(None);
     };
+    vault::set_basic(args.basic_store);
     let launcher = args.config.is_none() && !args.edit && !args.list;
     let config_path = match args.config {
         Some(path) => path,
@@ -226,4 +252,45 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Option<Args>> {
+        parse_args(args.iter().map(|a| a.to_string()))
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn password_store_flag() {
+        assert!(!parse(&[]).unwrap().unwrap().basic_store);
+        assert!(
+            parse(&["--password-store=basic"])
+                .unwrap()
+                .unwrap()
+                .basic_store
+        );
+        assert!(
+            parse(&["--password-store", "basic"])
+                .unwrap()
+                .unwrap()
+                .basic_store
+        );
+        assert!(
+            !parse(&["--password-store=keyring"])
+                .unwrap()
+                .unwrap()
+                .basic_store
+        );
+        assert!(parse(&["--password-store=gnome"]).is_err());
+        assert!(parse(&["--password-store"]).is_err());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn password_store_flag_linux_only() {
+        assert!(parse(&["--password-store=basic"]).is_err());
+    }
 }
