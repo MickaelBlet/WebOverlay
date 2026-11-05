@@ -105,7 +105,7 @@ const HEADER_SETUP = {
   hide: [],
 };
 const HEADER_STATE = {
-  title: "Team Board",
+  title: "Your Site",
   url: `${ORIGIN}/`,
   favicon: BOARD_ICON,
   zoom: 1,
