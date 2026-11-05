@@ -1,11 +1,11 @@
 # Editor
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="images/editor-dark.svg"><img src="images/editor.svg" alt="Editor"></picture>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="images/editor-dark.svg"><img src="images/editor.svg" alt="Editor"></picture></p>
 
 The pencil button in the header (or `weboverlay --edit`, which opens only the editor and works with a
 missing or invalid config) edits `config.toml` and the script/style files it references.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="images/editor-completion-dark.svg"><img src="images/editor-completion.svg" alt="Completion and live validation"></picture>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="images/editor-completion-dark.svg"><img src="images/editor-completion.svg" alt="Completion and live validation"></picture></p>
 
 - TOML/JS/CSS highlighting, line numbers, current line and matching bracket highlight.
 - VSCode shortcuts (below), auto-closed brackets and quotes, smart indentation.

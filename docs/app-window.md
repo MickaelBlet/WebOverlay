@@ -1,11 +1,11 @@
 # App window
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="images/app-window-dark.svg"><img src="images/app-window.svg" alt="App window"></picture>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="images/app-window-dark.svg"><img src="images/app-window.svg" alt="App window"></picture></p>
 
 Each app opens in its own window with an isolated profile (cookies, storage). The OS title bar is
 replaced by the header:
 
-<img src="images/header.svg" alt="Header">
+<p align="center"><img src="images/header.svg" alt="Header"></p>
 
 | Item | Action |
 | ---- | ------ |
@@ -43,7 +43,7 @@ Hide items with `[app.header] hide`, change its colors with `color` / `text_colo
 A download asks where to save the file with a native "save as" dialog, then shows in the
 downloads window: progress, cancel, open, show in folder, remove.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="images/downloads-dark.svg"><img src="images/downloads.svg" alt="Downloads window"></picture>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="images/downloads-dark.svg"><img src="images/downloads.svg" alt="Downloads window"></picture></p>
 
 Extensions listed in `open_downloads` (e.g. `ica`) skip the dialog: saved to the default
 downloads folder and opened with their default app.

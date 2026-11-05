@@ -1,13 +1,13 @@
 # Vault
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="images/vault-dark.svg"><img src="images/vault.svg" alt="Vault window"></picture>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="images/vault-dark.svg"><img src="images/vault.svg" alt="Vault window"></picture></p>
 
 The key button of the header fills the login saved for the page origin (`scheme://host[:port]`)
 into its login form (username and password, never submitted); with no login or several, it opens
 the vault window: add, edit, delete, copy the password, or fill one of the page's logins.
 `[app.vault] fill = "auto"` also fills on page load when exactly one login matches.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="images/vault-add-dark.svg"><img src="images/vault-add.svg" alt="Adding a login"></picture>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="images/vault-add-dark.svg"><img src="images/vault-add.svg" alt="Adding a login"></picture></p>
 
 The key button of the editor title bar (or the `WebOverlay: Manage Logins (Vault)` command) always
 opens the vault, also when the app is not running (`--edit`).
