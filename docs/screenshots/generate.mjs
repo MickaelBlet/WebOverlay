@@ -106,7 +106,7 @@ const HEADER_SETUP = {
 };
 const HEADER_STATE = {
   title: "Your Site",
-  url: `${ORIGIN}/`,
+  url: "https://yoursite.example.com/",
   favicon: BOARD_ICON,
   zoom: 1,
   maximized: false,
