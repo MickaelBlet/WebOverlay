@@ -19,7 +19,7 @@ scripts/build.sh --fast linux                     # one OS only, thin LTO (quick
 scripts/build.sh --fast windows                   # quick Windows exe (portable exe, WebView2 loader linked statically)
 ```
 
-- Only Docker + buildx are required on the host (any Linux, no WSL); host `cargo` commands need Rust and the WebKitGTK dev packages listed in README.md.
+- Only Docker + buildx are required on the host (any Linux, no WSL); host `cargo` commands need Rust and the WebKitGTK dev packages listed in docs/building.md.
 - `scripts/build.sh` = `docker buildx bake` (Dockerfile modeled on ../ProjectScaffold-Viewer): Linux deb/rpm and Windows NSIS setup + portable exe via `cargo-xwin` (MSVC target), built in parallel (bake targets `linux` / `windows`, each exported to its own `dist-tauri/<os>`). The AppImage is not Tauri's: stage `appimage` (Arch Linux, rolling) takes the binary from the deb and runs pkgforge-dev quick-sharun (script pinned by commit + sha256, debloated `webkit2gtk-4.1-mini` packages) to bundle WebKitGTK, GTK, Mesa and glibc (every executable, WebKit helpers included, runs through the bundled `ld.so`), so it runs on RHEL/Rocky 8 (glibc 2.28); checked in a `rockylinux:8` container with Xvfb. The deb/rpm need the host's `webkit2gtk-4.1` (glibc 2.35+). Tool versions are pinned by digest/checksum in the Dockerfile (incl. `RUST_VERSION`, `TAURI_CLI_VERSION`, `CARGO_XWIN_VERSION`; tauri-cli and cargo-xwin are prebuilt release binaries). Crates are fetched once in the `deps` layer (keyed on Cargo.toml/Cargo.lock); `target` and `/root/.cache` (xwin CRT/SDK, tauri bundler tools) are per-OS cache mounts. `scripts/check.sh` = bake target `check` (stage `check`, `type=cacheonly` output, own `-check` caches). `--fast` (`FAST=1`) overrides the release profile via `CARGO_PROFILE_RELEASE_*` env and uses separate `-fast` target caches.
 - Release builds use `windows_subsystem = "windows"` (`not(debug_assertions)` only): no console output on Windows (`--list`, `--help`, errors are invisible there). Debug builds / `cargo run` keep the console.
 
@@ -52,6 +52,6 @@ Flow: `main.rs` parses CLI and (unless launcher / `--edit`) loads config **befor
 
 ## Conventions
 
-- Update `CHANGELOG.md` `[Unreleased]` (Keep a Changelog) and `README.md` for user-visible changes; update `examples/config.toml`, the config section of `README.md`, `launcher::NEW_CONFIG` and `src/schema.rs` (editor docs/completion) when the config format changes. A release removes the `[Unreleased]` heading: add it back above the latest version (its compare link at the bottom stays).
+- Update `CHANGELOG.md` `[Unreleased]` (Keep a Changelog) and the user docs in `docs/` (`README.md` only for the overview / quick start; screenshots in `docs/images/`) for user-visible changes; update `examples/config.toml`, `docs/configuration.md`, `launcher::NEW_CONFIG` and `src/schema.rs` (editor docs/completion) when the config format changes. A release removes the `[Unreleased]` heading: add it back above the latest version (its compare link at the bottom stays).
 - Before committing: `cargo fmt`, then `scripts/check.sh` (fmt check, clippy Linux + Windows, tests).
 - Commit each finished feature or fix with the `commit-gpg` skill (GPG-signed commit, CHANGELOG checked).

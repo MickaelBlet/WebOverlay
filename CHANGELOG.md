@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- User documentation in `docs/` with screenshots (getting started, configuration, app window, launcher, editor, vault, building, troubleshooting); the README is now a short overview.
+
 ## [0.2.6] - 2026-11-04
 
 ### Added

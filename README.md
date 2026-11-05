@@ -3,213 +3,50 @@
 <p align="center"><img src="icons/128x128.png" alt="WebOverlay icon" width="128" height="128"></p>
 
 Open any website as a standalone desktop webapp (Tauri 2) and inject your own JavaScript and CSS into it.
+Linux and Windows.
+
+<p align="center"><img src="docs/images/app-window.png" alt="A web app opened by WebOverlay" width="720"></p>
 
 - One config file per app window, isolated profile (cookies, storage) per app.
-- Custom header replacing the OS title bar: back, forward, reload, home, favicon + page title + URL, zoom, vault, edit config, developer tools, open in browser, window controls.
-  Shortcuts: Alt+←/→, F5 / Ctrl+R.
-- Site favicon (or the `icon` of the config) as header and window/taskbar icon (Windows, Linux X11), one taskbar button per app on Windows; a pinned app relaunches with its config and favicon.
-- Scripts and styles injected on every page load, filtered by URL wildcards.
-- Built-in editor for the config and its script/style files (TOML/JS/CSS highlighting).
-- Off-host links and popups open in the system browser, except downloads (checked by fetching the URL once, without cookies), which stay in the app.
-- File downloads with a native "save as" dialog and a downloads window (progress, cancel, open, show in folder).
-- Vault: logins saved in the system keyring, filled into login forms from the header or on page load.
+- Custom [header](docs/app-window.md) replacing the OS title bar: navigation, page title + URL, zoom, vault, devtools…
+- Site favicon (or your own icon) as window/taskbar icon; one taskbar button per app on Windows, pinnable.
+- [Scripts and styles](docs/configuration.md) injected on every page load, filtered by URL wildcards.
+- [Launcher](docs/launcher.md) listing your apps, and a built-in [editor](docs/editor.md) for configs, scripts and styles.
+- Off-host links open in the system browser; [downloads](docs/app-window.md#downloads) stay in the app (save dialog, downloads window).
+- [Vault](docs/vault.md): logins saved in the system keyring, filled into login forms.
 - Remote pages get no Tauri IPC access.
 
-## Prerequisites
-
-Release builds and checks: Docker with buildx only (any Linux).
-
-Dev run (`cargo run`) on Linux:
-
-```sh
-sudo apt install pkg-config build-essential libssl-dev libwebkit2gtk-4.1-dev \
-  libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev \
-  libdbus-1-dev libxdo-dev
-```
-
-Windows: Rust (MSVC toolchain) and WebView2 (preinstalled on Windows 10/11).
-
-## Usage
-
-```sh
-cargo run -- --config examples/config.toml        # dev
-scripts/check.sh                                  # fmt, clippy (Linux + Windows), tests in Docker
-scripts/build.sh                                  # release builds in Docker (see below)
-weboverlay [--config <path>] [--list] [--edit] [--maximized] [--password-store=basic]  # open the app of the config
-weboverlay                                        # launcher
-```
-
-## Release builds
-
-`scripts/build.sh` (`docker buildx bake`) builds both platforms in parallel from any Linux, only Docker (with buildx) required. `scripts/build.sh [--fast] [linux|windows]...` builds only the given platforms; `--fast` trades a slightly bigger binary for a much quicker rebuild (thin LTO):
-
-- `dist-tauri/linux/`: `.deb`, `.rpm` (glibc 2.35+ with `webkit2gtk-4.1`, e.g. Ubuntu 22.04, Debian 12), `.AppImage` (self-contained: bundles WebKitGTK, GTK and glibc, runs on older distros such as RHEL/Rocky 8)
-- `dist-tauri/windows/`: NSIS `*-setup.exe` and `WebOverlay-portable.exe` (cargo-xwin, MSVC target)
-
-Release Windows builds have no console: `--list`, `--help` and errors print nothing there.
-
-Config lookup (first found):
-
-1. `--config <path>`
-2. `config.toml` next to the executable (portable mode; next to the `.AppImage` file for AppImages)
-3. `<config dir>/weboverlay/config.toml` (`~/.config/weboverlay/config.toml`, `%APPDATA%\weboverlay\config.toml`)
-
-Profiles: `<local data dir>/weboverlay/profiles/<app>`.
-
-Linux without a usable GPU (virtual machine without 3D acceleration, no `/dev/dri/renderD*` of a 3D driver): WebOverlay turns off WebKitGTK's accelerated compositing (`WEBKIT_DISABLE_COMPOSITING_MODE=1`, `WEBKIT_DISABLE_DMABUF_RENDERER=1`, `LIBGL_ALWAYS_SOFTWARE=1`), much faster than compositing on Mesa's software renderer. `WEBOVERLAY_GPU=1` keeps the GPU path, `WEBOVERLAY_GPU=0` forces the software one; variables already set are kept. The AppImage ignores the host's `GTK_MODULES` (its GTK cannot load them).
-
-## Config
-
-One config file = one app window (`[app]` table; a second app goes in another config file).
+## Quick start
 
 ```toml
+# config.toml
 [app]
-name = "gmail"                     # [A-Za-z0-9_-]+, names the profile (configs with the same name share it)
-url = "https://mail.google.com"
-title = "Gmail"                    # optional, default: page title
-width = 1200                       # optional
-height = 800                       # optional
-maximized = false                  # optional, start maximized (also `--maximized` on the command line)
-center = false                     # optional, open the window centered on the screen
-zoom = 1.25                        # optional, initial page zoom (0.3 to 3.0, default 1.0), also the zoom reset
-user_agent = "..."                 # optional
-icon = "gmail/icon.png"            # optional, header/window/taskbar/launcher icon (PNG, ICO, JPEG, GIF, WebP, BMP, SVG), default: site favicon
-allowed_hosts = ["*.google.com"]   # optional, default: host of url; `*.x` also matches `x`
-open_downloads = ["ica"]           # optional, file extensions opened with their default app once downloaded (no save dialog)
-styles = [{ path = "gmail/dark.css", matches = [] }]
-scripts = [
-  { path = "gmail/main.js", run_at = "document-end", matches = ["https://mail.google.com/mail/*"] },
-]
-
-[app.header]                       # optional
-color = "#c5221f"                  # optional, background (#rgb / #rrggbb), default: system theme
-text_color = "#ffffff"             # optional, default: light or dark, following `color`
-hide = ["zoom", "edit"]            # optional, header items not shown
-
-[app.vault]                        # optional
-fill = "button"                    # optional, `button` (default) or `auto`
+name = "board"
+url = "https://board.example.com"
+scripts = [{ path = "board/main.js" }]
 ```
 
-| Field     | Values |
-| --------- | ------ |
-| `run_at`  | `document-start` (before page scripts), `document-end` (DOMContentLoaded, default), `document-idle` (load) |
-| `matches` | Wildcards (`*`) on `location.href`, case-insensitive; empty = every page |
-| `fill`    | `button`: header vault button only (default); `auto`: also on page load when exactly one login is saved for the page origin |
-| `hide`    | `back`, `forward`, `reload`, `home`, `favicon`, `title`, `url`, `zoom` (the 3 zoom buttons), `downloads`, `vault`, `edit`, `devtools`, `external` (window controls always stay) |
+```sh
+weboverlay --config config.toml    # open the app
+weboverlay                         # launcher: create, import, edit and open configs
+```
 
-Paths are relative to the config file. Files are read at startup: restart the app after editing.
+## Build
 
-## Vault
+```sh
+cargo run -- --config examples/config.toml   # dev (Linux needs the WebKitGTK dev packages)
+scripts/build.sh                             # .deb, .rpm, .AppImage, Windows setup + portable exe, in Docker
+```
 
-The key button of the header fills the login saved for the page origin (`scheme://host[:port]`)
-into its login form (username and password, never submitted); with no login or several, it opens
-the vault window: add, edit, delete, copy the password, or fill one of the page's logins.
-`[app.vault] fill = "auto"` also fills on page load when exactly one login matches.
-The key button of the editor title bar (or the `WebOverlay: Manage Logins (Vault)` command)
-always opens the vault, also when the app is not running (`--edit`).
+See [Building](docs/building.md).
 
-- Passwords are stored in the system keyring: Secret Service on Linux (GNOME Keyring, KWallet,
-  KeePassXC…, which must be running), Credential Manager on Windows. One entry per login,
-  service `dev.blet.weboverlay`.
-- Linux without a Secret Service: start with `--password-store=basic` (as in Chromium) to keep
-  the passwords in `<local data dir>/weboverlay/vault/<app id>.basic-secrets.json` instead, a
-  **plaintext** file readable by your user only (mode 600), with its own login list
-  (`<app id>.basic.json`): the two stores don't share logins. The launcher passes the option on
-  to the apps and editors it opens.
-- The list of logins (origins and usernames, no passwords) is kept in
-  `<local data dir>/weboverlay/vault/<app id>.json`, per app and config file.
-- Logins are entered by hand: forms submitted in the page are not captured.
-- A filled password is readable by every script of that origin, as with any password manager:
-  `auto` fills without asking, use it only on sites you trust.
+## Documentation
 
-## Launcher
-
-`weboverlay` without `--config` opens the launcher instead of an app: one grid of app tiles:
-the recent apps (the last 10 opened, from the launcher or the command line, stored in
-`<local data dir>/weboverlay/recent.json`) and the apps of the other local configs (every `*.toml` of `<config dir>/weboverlay/`
-and next to the executable or the `.AppImage` file, configs created or imported from the launcher). Each app is listed once;
-recent apps no longer in their config are greyed out. Tiles are sorted by name A→Z by default; the sort menu
-at the right of the status bar switches to Z→A or to recently opened first (recent apps newest first, then the config apps in
-config order), and the choice is remembered. The top bar (search, `Configs`) is the window's
-title bar: drag it to move the window, double click to maximize.
-
-One click starts the app in a new WebOverlay process (`--config <path>`); the launcher stays open.
-Tiles show the app `icon` from the config, else the app favicon: the last one seen by the app (cached as
-`<local data dir>/weboverlay/icons/<id>.png`), else the site's `/favicon.ico`, else a letter.
-
-- **Search**: type anywhere to filter on title, app name and host; `Enter` opens the first match, `Esc` clears.
-  Arrow keys move between tiles.
-- **App menu** (`⋯` on hover, right click or the menu key): `Open`, `Edit config`, `Remove from recent`.
-- **Configs** menu in the header: **Folder config** (`config.toml` next to the executable, when present),
-  **User config** (`<config dir>/weboverlay/config.toml`) and the configs created with `New config…` or imported, with
-  their path, errors (the button shows how many configs are invalid), the app title, `Open` and `Edit` (`Create` when missing: the file is created from the same commented example as `New config…`, then opened in the editor).
-- **New config…** (`+` button at the bottom right): native "save as" dialog; the file is created from a commented example of every key unless it
-  exists, then opened in the editor. These configs are stored in `<local data dir>/weboverlay/configs.json`;
-  `Forget` removes one from the list (the file is kept).
-- **Import…** (import button at the bottom right, left of `+`): native open dialog; adds an existing config file to the launcher
-  (same list as `New config…`, the file stays where it is).
-
-## Editor
-
-The pencil button in the header (or `weboverlay --edit`, which opens only the editor and works with a
-missing or invalid config) edits `config.toml` and the script/style files it references:
-
-- TOML/JS/CSS highlighting, line numbers, current line and matching bracket highlight.
-- VSCode shortcuts (below), auto-closed brackets and quotes, smart indentation.
-- Completion (`Ctrl+Space`, or while typing) with documentation: config keys of the current table (`[app]`,
-  `[app.header]`, `scripts`/`styles` items), their values (`run_at`, `hide`, booleans) and `[app]` /
-  `[app.header]` headers; JS: keywords, words of the file and DOM members (`document.`, `window.`…);
-  CSS: properties, values and `var(--x)`.
-- Hover a config key, value or header for its documentation (`Ctrl+K Ctrl+I` at the caret).
-- Find / replace (match case, whole word, regex with `$1` groups), quick open of the files, command palette, go to line.
-- `config.toml` is checked while typing: the error is underlined, its line number turns red and the
-  status bar shows it (click to jump there).
-- `config.toml` is validated before saving: an invalid config is refused with the error shown.
-- Files referenced by the config but missing are marked `missing` and created on save.
-- New scripts and styles from the sidebar (`+`, `Ctrl+N`): the file is created next to the config (an
-  existing file is refused) and added to its `scripts` / `styles` (with `run_at` and `matches`), comments
-  and layout of `config.toml` kept. Import (sidebar button or right click) adds an existing `.js` / `.css`:
-  copied next to the config, or referenced in place when it already is under the config directory.
-  Right click a file (or a tab) to rename it, remove it from the config (the file is kept), delete it,
-  reveal it in the file manager or copy its path. The config itself can be renamed too (same directory;
-  the launcher lists follow, a pinned taskbar button still points to the old file).
-- Tabs (drag to reorder, middle click to close) and a second editor group side by side (`Ctrl+\`, drag a
-  tab or a sidebar file onto a group); open tabs, split and sidebar width are restored on the next opening.
-- Own title bar: app icon and name, search (quick open / commands), Pin, Restart, Save, window buttons.
-  Closing the window (or Restart) with unsaved changes asks to save them first.
-- Restart reopens the app window with the saved config; the editor stays open.
-- Pin keeps the editor above the other windows (also `View: Toggle Always on Top` in the command palette).
-
-| Keys | Action |
-| ---- | ------ |
-| `Ctrl+S` · `Ctrl+K S` | Save · save all |
-| `Ctrl+N` | New script or style |
-| `Ctrl+W` · `Ctrl+K Ctrl+W` | Close tab · close all tabs of the group |
-| `Ctrl+\` · `Ctrl+1` / `Ctrl+2` | Split right · focus the first / second group |
-| `Ctrl+PageDown` / `Ctrl+PageUp` | Next / previous tab |
-| `Ctrl+B` | Toggle the sidebar |
-| `Ctrl+/` · `Shift+Alt+A` | Toggle line comment (CSS: block) · block comment |
-| `Alt+↑/↓` · `Shift+Alt+↑/↓` | Move · copy line(s) |
-| `Ctrl+Shift+K` | Delete line(s) |
-| `Ctrl+Enter` · `Ctrl+Shift+Enter` | Insert line below · above |
-| `Ctrl+L` · `Ctrl+D` | Select line (repeat to extend) · select word, then its next occurrence |
-| `Tab` / `Shift+Tab` · `Ctrl+]` / `Ctrl+[` | Indent / outdent |
-| `Home` | First non-blank char, then line start |
-| `Ctrl+C` / `Ctrl+X` without selection | Copy / cut the line |
-| `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo |
-| `Ctrl+Space` · `Ctrl+K Ctrl+I` | Suggestions · documentation at the caret |
-| `Ctrl+F` · `Ctrl+H` | Find · replace (`Enter` / `Shift+Enter`: next / previous, `Ctrl+Alt+Enter`: replace all, `Alt+C` / `Alt+W` / `Alt+R`: case / whole word / regex) |
-| `F3` / `Shift+F3` | Next / previous match |
-| `Ctrl+P` · `Ctrl+Shift+P` / `F1` · `Ctrl+G` | Quick open file · command palette · go to line (`:line[:column]`) |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab (most recently used first) |
-
-Punctuation shortcuts follow the physical US key on other layouts (AZERTY: `Ctrl+$` = `Ctrl+]`, like VSCode).
-
-Each script runs inside its own function wrapped in `try/catch`; errors are logged to the devtools console
-(header terminal button, `F12` / `Ctrl+Shift+I` with the header focused, or right click → Inspect).
-
-## Limitations
-
-- Injection targets the main frame only (no iframes).
-- Styles use constructable stylesheets (bypass CSP), falling back to a `<style>` element.
-- Scripts run in the page context and are subject to the page CSP for things like `eval`.
+[Getting started](docs/getting-started.md) ·
+[Configuration](docs/configuration.md) ·
+[App window](docs/app-window.md) ·
+[Launcher](docs/launcher.md) ·
+[Editor](docs/editor.md) ·
+[Vault](docs/vault.md) ·
+[Building](docs/building.md) ·
+[Troubleshooting](docs/troubleshooting.md)
