@@ -1,6 +1,6 @@
 # WebOverlay documentation
 
-<p align="center"><img src="images/app-window.png" alt="A web app opened by WebOverlay, with its header and an injected script" width="720"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="images/app-window-dark.svg"><img src="images/app-window.svg" alt="A web app opened by WebOverlay, with its header and an injected script" width="720"></picture></p>
 
 | Page | Contents |
 | ---- | -------- |

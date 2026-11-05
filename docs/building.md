@@ -34,3 +34,14 @@ platforms; `--fast` trades a slightly bigger binary for a much quicker rebuild (
 - `dist-tauri/windows/`: NSIS `*-setup.exe` and `WebOverlay-portable.exe` (cargo-xwin, MSVC target)
 
 Release Windows builds have no console: `--list`, `--help` and errors print nothing there.
+
+## Documentation screenshots
+
+`scripts/screenshots.sh` regenerates `docs/images/*.svg` (light, and `*-dark.svg`): the real
+`dist/` pages are rendered in headless Chromium with a stub of the app IPC and fixture data
+(`docs/screenshots/`: fake site, icons, `generate.mjs` scenes), printed to PDF, then converted to
+SVG with text as paths (no font needed to view them). Rerun it after a UI change.
+
+Needs Node 22+, Chromium or `chrome-headless-shell` (`CHROME=<path>`, else found on `PATH` or in the
+Playwright cache), Python 3 with PyMuPDF (`pip install pymupdf`, or `PYTHON=<python>`) and cargo
+(the editor completion docs come from `src/schema.rs`). `SCENES=editor,vault` renders only those.

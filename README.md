@@ -5,7 +5,7 @@
 Open any website as a standalone desktop webapp (Tauri 2) and inject your own JavaScript and CSS into it.
 Linux and Windows.
 
-<p align="center"><img src="docs/images/app-window.png" alt="A web app opened by WebOverlay" width="720"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/launcher-dark.svg"><img src="docs/images/launcher.svg" alt="WebOverlay launcher" width="820"></picture></p>
 
 - One config file per app window, isolated profile (cookies, storage) per app.
 - Custom [header](docs/app-window.md) replacing the OS title bar: navigation, page title + URL, zoom, vault, devtools…

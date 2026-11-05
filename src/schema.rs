@@ -515,4 +515,14 @@ mod tests {
             Config::parse(&text).unwrap();
         }
     }
+
+    /// The schema as served by `editor_schema`; `WEBOVERLAY_SCHEMA_OUT=<path>` saves it (used by
+    /// `scripts/screenshots.sh` to render the editor completion).
+    #[test]
+    fn schema_serializes() {
+        let json = serde_json::to_string(SCHEMA).unwrap();
+        if let Ok(path) = std::env::var("WEBOVERLAY_SCHEMA_OUT") {
+            std::fs::write(path, &json).unwrap();
+        }
+    }
 }

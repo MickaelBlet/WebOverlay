@@ -1,6 +1,6 @@
 # Launcher
 
-![Launcher](images/launcher.png)
+<picture><source media="(prefers-color-scheme: dark)" srcset="images/launcher-dark.svg"><img src="images/launcher.svg" alt="Launcher"></picture>
 
 `weboverlay` without `--config` opens the launcher instead of an app: one grid of app tiles:
 the recent apps (the last 10 opened, from the launcher or the command line, stored in

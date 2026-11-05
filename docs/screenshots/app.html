@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- App window scene: the header page above the content, as `window::open` lays them out. -->
+<style>
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; }
+iframe { border: 0; display: block; width: 100%; }
+#header { height: 30px; flex: none; }
+#content { flex: 1; }
+</style>
+</head>
+<body>
+<iframe id="header" src="../../dist/header.html"></iframe>
+<iframe id="content" src="site/index.html"></iframe>
+</body>
+</html>
