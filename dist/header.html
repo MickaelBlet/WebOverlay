@@ -98,6 +98,8 @@
   }
   #url-input:focus { border-color: #2563eb; }
   #page.editing > :not(#url-input) { display: none !important; }
+  #failure { width: auto; height: 22px; align-self: center; padding: 0 8px; gap: 6px; display: flex; align-items: center; color: var(--close); font-weight: 600; }
+  #page.failed > #title, #page.failed > #url { display: none; }
   #zoom { width: 40px; border-radius: 6px; font-variant-numeric: tabular-nums; font-size: 11px; }
   .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--border); flex: none; }
   .win button { width: 40px; height: 29px; border-radius: 0; }
@@ -127,6 +129,11 @@
   <div id="page">
     <img id="favicon" alt="" hidden>
     <svg id="favicon-default" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+    <button id="failure" data-action="reload" title="Reload (F5)" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+      <span id="failure-text"></span>
+      <span>· Reload</span>
+    </button>
     <span id="title" data-item="title"></span>
     <span id="url" data-item="url"></span>
     <input id="url-input" type="text" spellcheck="false" autocomplete="off" hidden>
@@ -245,7 +252,7 @@
       input.focus();
       input.select();
     },
-    update({ title, url, favicon, zoom, maximized, downloads }) {
+    update({ title, url, favicon, zoom, maximized, downloads, failure }) {
       pageUrl = url;
       document.querySelector('[data-item="downloads"]').hidden = hidden.has("downloads") || !downloads;
       setFavicon(favicon);
@@ -255,6 +262,9 @@
         shown = u.host + (u.pathname === "/" ? "" : u.pathname) + u.search;
       } catch (_) {}
       $("title").textContent = title;
+      $("failure").hidden = !failure;
+      $("failure-text").textContent = failure || "";
+      $("page").classList.toggle("failed", !!failure);
       $("url").textContent = shown;
       $("page").title = title ? `${title}\n${url}` : url;
       $("zoom").textContent = Math.round(zoom * 100) + "%";

@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Header: a frozen page (no response to clicks or keys) shows `Page not responding`, cleared when it responds again; its reload button (or `F5` in the header) stops the page's web process and reloads it.
+
+### Fixed
+
+- A page whose web process crashes (out of memory, ...) no longer stays blank: it is reloaded; if it crashes again within a minute, the header shows `Page closed: out of memory` / `Page crashed` with a reload button instead of reloading in a loop. Popups are reloaded the same way, the header always.
+
 ## [0.2.7] - 2026-11-05
 
 ### Added

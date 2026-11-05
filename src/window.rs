@@ -14,6 +14,7 @@ use tauri::{
 };
 
 use crate::config::{AppConfig, HexColor};
+use crate::crash;
 use crate::download;
 use crate::header;
 use crate::icon;
@@ -153,6 +154,9 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
         &app
     )
     .on_page_load(|webview, payload| {
+        if payload.event() == PageLoadEvent::Started {
+            header::set_failure(webview.app_handle(), webview.window().label(), None);
+        }
         if payload.event() == PageLoadEvent::Finished {
             // Hidden until then: WebView2 / WebKit paint white before the first frame.
             let _ = webview.show();
@@ -193,14 +197,14 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     fix_header_height(&header_webview);
     #[cfg(target_os = "linux")]
     attach_resize_handler(&header_webview);
-    #[cfg(not(target_os = "linux"))]
-    let _ = header_webview;
+    crash::setup(&header_webview);
     let content_webview =
         window.add_child(content_view, content_rect.position, content_rect.size)?;
     #[cfg(target_os = "linux")]
     attach_resize_handler(&content_webview);
     content_webview.hide()?;
     download::setup(&content_webview, window.clone(), None);
+    crash::setup(&content_webview);
     if app.config.zoom != 1.0 {
         let _ = content_webview.set_zoom(app.config.zoom);
     }
@@ -438,6 +442,7 @@ fn new_window(
                 .get_window(&app.config.name)
                 .unwrap_or_else(|| window.as_ref().window());
             download::setup(window.as_ref(), parent, Some(window.clone()));
+            crash::setup(window.as_ref());
             if app.config.zoom != 1.0 {
                 let _ = window.set_zoom(app.config.zoom);
             }

@@ -9,6 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, Url, Webview};
 
 use crate::config::{HeaderConfig, HexColor, ZOOM_MAX, ZOOM_MIN};
+use crate::crash;
 use crate::download;
 use crate::editor;
 use crate::icon;
@@ -44,6 +45,8 @@ struct WindowState {
     favicon: String,
     /// Configured `icon` (`data:` URL), shown instead of the page favicon.
     icon: Option<String>,
+    /// Content web process crashed (and wasn't reloaded) or not responding (`crash`).
+    failure: Option<crash::Failure>,
 }
 
 /// Window label -> state.
@@ -59,6 +62,8 @@ struct HeaderState<'a> {
     maximized: bool,
     /// Shows the downloads button (once something was downloaded).
     downloads: bool,
+    /// Failure message, shown with a reload button.
+    failure: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -111,6 +116,7 @@ pub fn register(handle: &AppHandle, label: &str, app: Arc<AppWindow>) {
         favicon: String::new(),
         icon: app.icon.as_ref().and_then(icon::data_url),
         zoom: app.config.zoom,
+        failure: None,
         app,
     };
     lock(handle).insert(label.to_owned(), state);
@@ -140,6 +146,26 @@ pub fn set_page(handle: &AppHandle, label: &str, title: Option<String>, url: Opt
         }
     }
     push_state(handle, label);
+}
+
+/// Records a failure of the content page (`None` once it loads or responds again) and refreshes
+/// the header.
+pub fn set_failure(handle: &AppHandle, label: &str, failure: Option<crash::Failure>) {
+    let changed = match lock(handle).get_mut(label) {
+        Some(state) if state.failure != failure => {
+            state.failure = failure;
+            true
+        }
+        _ => false,
+    };
+    if changed {
+        push_state(handle, label);
+    }
+}
+
+/// Current failure of the content page of window `label`.
+pub fn failure(handle: &AppHandle, label: &str) -> Option<crash::Failure> {
+    lock(handle).get(label).and_then(|state| state.failure)
 }
 
 /// Reads the content page favicon and refreshes the header when it changed.
@@ -211,6 +237,7 @@ pub fn push_state(handle: &AppHandle, label: &str) {
             zoom: state.zoom,
             maximized,
             downloads: download::started(),
+            failure: state.failure.map(crash::Failure::message),
         };
         let json = serde_json::to_string(&header_state).expect("state serializes");
         format!("window.weboverlay && window.weboverlay.update({json})")
@@ -351,7 +378,14 @@ pub fn header_action(webview: Webview, action: String, url: Option<String>) -> R
     let result = match action.as_str() {
         "back" => content.eval("history.back()"),
         "forward" => content.eval("history.forward()"),
-        "reload" => content.reload(),
+        "reload" => match failure(handle, &label) {
+            // A frozen page ignores reloads: its web process is killed first.
+            Some(crash::Failure::Unresponsive) => {
+                crash::kill(&content);
+                Ok(())
+            }
+            _ => content.reload(),
+        },
         "home" => {
             let home = lock(handle).get(&label).map(|s| s.app.config.url.clone());
             match home {
