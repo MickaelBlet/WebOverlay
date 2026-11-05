@@ -23,13 +23,13 @@ const dataUrl = (file) =>
 
 const DIR = "/home/user/.config/weboverlay";
 const CONFIG = `[app]
-name = "yoursite"
-url = "https://yoursite.example.com/"
-title = "Your Site"
-icon = "yoursite/icon.svg"
-styles = [{ path = "yoursite/style.css" }]
+name = "mywebapp"
+url = "https://mywebapp.example.com/"
+title = "My Web App"
+icon = "mywebapp/icon.svg"
+styles = [{ path = "mywebapp/style.css" }]
 scripts = [
-  { path = "yoursite/banner.js", run_at = "document-end", matches = ["https://yoursite.example.com/*"] },
+  { path = "mywebapp/banner.js", run_at = "document-end", matches = ["https://mywebapp.example.com/*"] },
 ]
 
 [app.header]
@@ -41,14 +41,14 @@ fill = "button"
 const BANNER = readFileSync(join(here, "../../examples/demo/banner.js"), "utf8");
 const STYLE = "body {\n  font-family: system-ui, sans-serif;\n}\n";
 const FILES = {
-  [`${DIR}/yoursite.toml`]: CONFIG,
-  [`${DIR}/yoursite/banner.js`]: BANNER,
-  [`${DIR}/yoursite/style.css`]: STYLE,
+  [`${DIR}/mywebapp.toml`]: CONFIG,
+  [`${DIR}/mywebapp/banner.js`]: BANNER,
+  [`${DIR}/mywebapp/style.css`]: STYLE,
 };
-const SITE_ICON = dataUrl("icons/yoursite.svg");
+const SITE_ICON = dataUrl("icons/mywebapp.svg");
 
 const APPS = [
-  ["yoursite", "Your Site", "https://yoursite.example.com/"],
+  ["mywebapp", "My Web App", "https://mywebapp.example.com/"],
   ["mail", "Mail", "https://mail.example.com/"],
   ["chat", "Team Chat", "https://chat.example.com/"],
   ["wiki", "Wiki", "https://wiki.example.com/"],
@@ -75,7 +75,7 @@ const LAUNCHER = {
   })),
 };
 
-const ORIGIN = "https://yoursite.example.com";
+const ORIGIN = "https://mywebapp.example.com";
 const VAULT = {
   current: ORIGIN,
   home: ORIGIN,
@@ -105,7 +105,7 @@ const HEADER_SETUP = {
   hide: [],
 };
 const HEADER_STATE = {
-  title: "Your Site",
+  title: "My Web App",
   url: `${ORIGIN}/`,
   favicon: SITE_ICON,
   zoom: 1,
@@ -124,11 +124,11 @@ const stub = (extra = "") => `(() => {
     editor_schema: SCHEMA,
     editor_files: {
       files: [
-        { path: "${DIR}/yoursite.toml", kind: "config", app: "", exists: true },
-        { path: "${DIR}/yoursite/banner.js", kind: "script", app: "yoursite", exists: true },
-        { path: "${DIR}/yoursite/style.css", kind: "style", app: "yoursite", exists: true },
+        { path: "${DIR}/mywebapp.toml", kind: "config", app: "", exists: true },
+        { path: "${DIR}/mywebapp/banner.js", kind: "script", app: "mywebapp", exists: true },
+        { path: "${DIR}/mywebapp/style.css", kind: "style", app: "mywebapp", exists: true },
       ],
-      app: { name: "yoursite", title: "Your Site", icon: ${JSON.stringify(SITE_ICON)} },
+      app: { name: "mywebapp", title: "My Web App", icon: ${JSON.stringify(SITE_ICON)} },
       error: null,
     },
     editor_read: ({ path }) => ({ content: FILES[path] ?? "", exists: path in FILES }),
