@@ -174,7 +174,7 @@ const SCENES = [
   {
     name: "header",
     url: dist("header.html"),
-    size: [1100, 30],
+    size: [760, 30],
     themes: ["light"], // `[app.header] color` set: same in both themes
     run: (page) => page.eval(`window.weboverlay.update(${JSON.stringify(HEADER_STATE)})`),
   },
