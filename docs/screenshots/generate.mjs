@@ -23,13 +23,13 @@ const dataUrl = (file) =>
 
 const DIR = "/home/user/.config/weboverlay";
 const CONFIG = `[app]
-name = "board"
-url = "https://board.example.com/"
-title = "Team Board"
-icon = "board/icon.svg"
-styles = [{ path = "board/compact.css" }]
+name = "yoursite"
+url = "https://yoursite.example.com/"
+title = "Your Site"
+icon = "yoursite/icon.svg"
+styles = [{ path = "yoursite/style.css" }]
 scripts = [
-  { path = "board/banner.js", run_at = "document-end", matches = ["https://board.example.com/*"] },
+  { path = "yoursite/banner.js", run_at = "document-end", matches = ["https://yoursite.example.com/*"] },
 ]
 
 [app.header]
@@ -39,16 +39,16 @@ color = "#1e3a8a"
 fill = "button"
 `;
 const BANNER = readFileSync(join(here, "../../examples/demo/banner.js"), "utf8");
-const COMPACT = ".card {\n  border-left: 3px solid #0c66e4;\n}\n";
+const STYLE = "body {\n  font-family: system-ui, sans-serif;\n}\n";
 const FILES = {
-  [`${DIR}/board.toml`]: CONFIG,
-  [`${DIR}/board/banner.js`]: BANNER,
-  [`${DIR}/board/compact.css`]: COMPACT,
+  [`${DIR}/yoursite.toml`]: CONFIG,
+  [`${DIR}/yoursite/banner.js`]: BANNER,
+  [`${DIR}/yoursite/style.css`]: STYLE,
 };
-const BOARD_ICON = dataUrl("icons/board.svg");
+const SITE_ICON = dataUrl("icons/yoursite.svg");
 
 const APPS = [
-  ["board", "Team Board", "https://board.example.com/"],
+  ["yoursite", "Your Site", "https://yoursite.example.com/"],
   ["mail", "Mail", "https://mail.example.com/"],
   ["chat", "Team Chat", "https://chat.example.com/"],
   ["wiki", "Wiki", "https://wiki.example.com/"],
@@ -75,7 +75,7 @@ const LAUNCHER = {
   })),
 };
 
-const ORIGIN = "https://board.example.com";
+const ORIGIN = "https://yoursite.example.com";
 const VAULT = {
   current: ORIGIN,
   home: ORIGIN,
@@ -87,7 +87,7 @@ const VAULT = {
 };
 
 const DOWNLOADS = [
-  { id: 3, name: "board-export.csv", url: `${ORIGIN}/export.csv`, path: "/home/user/Downloads/board-export.csv", received: 3_400_000, total: 8_200_000, state: "running", asking: false },
+  { id: 3, name: "export.csv", url: `${ORIGIN}/export.csv`, path: "/home/user/Downloads/export.csv", received: 3_400_000, total: 8_200_000, state: "running", asking: false },
   { id: 2, name: "report-q3.pdf", url: `${ORIGIN}/report.pdf`, path: "/home/user/Downloads/report-q3.pdf", received: 1_250_000, total: 1_250_000, state: "done", asking: false },
   { id: 1, name: "attachments.zip", url: `${ORIGIN}/files.zip`, path: "/home/user/Downloads/attachments.zip", received: 0, total: null, state: "failed", asking: false },
 ];
@@ -106,8 +106,8 @@ const HEADER_SETUP = {
 };
 const HEADER_STATE = {
   title: "Your Site",
-  url: "https://yoursite.example.com/",
-  favicon: BOARD_ICON,
+  url: `${ORIGIN}/`,
+  favicon: SITE_ICON,
   zoom: 1,
   maximized: false,
   downloads: true,
@@ -124,11 +124,11 @@ const stub = (extra = "") => `(() => {
     editor_schema: SCHEMA,
     editor_files: {
       files: [
-        { path: "${DIR}/board.toml", kind: "config", app: "", exists: true },
-        { path: "${DIR}/board/banner.js", kind: "script", app: "board", exists: true },
-        { path: "${DIR}/board/compact.css", kind: "style", app: "board", exists: true },
+        { path: "${DIR}/yoursite.toml", kind: "config", app: "", exists: true },
+        { path: "${DIR}/yoursite/banner.js", kind: "script", app: "yoursite", exists: true },
+        { path: "${DIR}/yoursite/style.css", kind: "style", app: "yoursite", exists: true },
       ],
-      app: { name: "board", title: "Team Board", icon: ${JSON.stringify(BOARD_ICON)} },
+      app: { name: "yoursite", title: "Your Site", icon: ${JSON.stringify(SITE_ICON)} },
       error: null,
     },
     editor_read: ({ path }) => ({ content: FILES[path] ?? "", exists: path in FILES }),
@@ -154,7 +154,7 @@ const stub = (extra = "") => `(() => {
     // Blurred shadows become opaque boxes in the PDF -> SVG conversion.
     const style = document.createElement("style");
     style.textContent = "*, *::before, *::after { box-shadow: none !important; text-shadow: none !important; }"
-      + (site ? ${JSON.stringify(COMPACT)} : "");
+      + (site ? ${JSON.stringify(STYLE)} : "");
     document.head.append(style);
     if (site) { ${BANNER} }
   });
