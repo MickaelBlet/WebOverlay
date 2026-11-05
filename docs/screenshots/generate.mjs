@@ -168,7 +168,7 @@ const SCENES = [
   {
     name: "app-window",
     url: `${base}/docs/screenshots/app.html`,
-    size: [1100, 680],
+    size: [760, 440],
     run: (page) => page.eval(`document.getElementById("header").contentWindow.weboverlay.update(${JSON.stringify(HEADER_STATE)})`),
   },
   {
