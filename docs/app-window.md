@@ -12,7 +12,7 @@ replaced by the header:
 | Back / forward | `Alt+←` / `Alt+→` (always enabled) |
 | Reload | `F5` / `Ctrl+R` |
 | Home | Back to the config `url` |
-| Favicon, title, URL | Current page; drag the header to move the window, double click to maximize |
+| Favicon, title, URL | Current page; drag the header to move the window, double click to maximize, right click for `Copy URL` / `Edit URL…` (`Enter` opens the typed URL, `https://` added when missing; `Esc` cancels) |
 | Zoom − / % / + | Page zoom; the percentage resets it to the config `zoom` |
 | Downloads | Shown after the first download, opens the downloads window |
 | Vault (key) | Fill the saved login, or open the [vault](vault.md) |

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - User documentation in `docs/` with screenshots (getting started, configuration, app window, launcher, editor, vault, building, troubleshooting); the README is now a short overview.
 - Documentation screenshots are SVG, in light and dark versions following the reader's theme, regenerated from the app pages by `scripts/screenshots.sh`.
+- Header: right click on the page title for `Copy URL` and `Edit URL…` (the title turns into an address field; hosts outside `allowed_hosts` still open in the system browser).
 
 ## [0.2.6] - 2026-11-04
 

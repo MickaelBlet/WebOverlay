@@ -81,6 +81,23 @@
   #favicon[hidden], #favicon-default[hidden] { display: none; }
   #title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
   #url { color: var(--muted); overflow: hidden; text-overflow: ellipsis; flex: 0 10 auto; min-width: 40px; }
+  #url-input {
+    flex: 1;
+    min-width: 0;
+    height: 22px;
+    align-self: center;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--hover);
+    color: inherit;
+    font: inherit;
+    outline: none;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  #url-input:focus { border-color: #2563eb; }
+  #page.editing > :not(#url-input) { display: none !important; }
   #zoom { width: 40px; border-radius: 6px; font-variant-numeric: tabular-nums; font-size: 11px; }
   .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--border); flex: none; }
   .win button { width: 40px; height: 29px; border-radius: 0; }
@@ -112,6 +129,7 @@
     <svg id="favicon-default" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
     <span id="title" data-item="title"></span>
     <span id="url" data-item="url"></span>
+    <input id="url-input" type="text" spellcheck="false" autocomplete="off" hidden>
   </div>
 
   <div class="group">
@@ -156,8 +174,8 @@
   </div>
 
 <script>
-  const invoke = (action) =>
-    window.__TAURI_INTERNALS__.invoke("header_action", { action }).catch((e) => console.error(action, e));
+  const invoke = (action, args = {}) =>
+    window.__TAURI_INTERNALS__.invoke("header_action", { action, ...args }).catch((e) => console.error(action, e));
 
   const $ = (id) => document.getElementById(id);
 
@@ -192,8 +210,43 @@
     }
   };
 
+  let pageUrl = "";
+  const input = $("url-input");
+  const stopEditing = () => {
+    input.hidden = true;
+    $("page").classList.remove("editing");
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const url = input.value.trim();
+      stopEditing();
+      if (url && url !== pageUrl) invoke("navigate", { url });
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      stopEditing();
+    }
+    e.stopPropagation();
+  });
+  input.addEventListener("blur", stopEditing);
+
+  // Right click on the page title: native menu (copy / edit the URL).
+  $("page").addEventListener("contextmenu", (e) => {
+    if (e.target === input) return;
+    e.preventDefault();
+    invoke("page_menu");
+  });
+
   window.weboverlay = {
+    editUrl() {
+      input.value = pageUrl;
+      input.hidden = false;
+      $("page").classList.add("editing");
+      input.focus();
+      input.select();
+    },
     update({ title, url, favicon, zoom, maximized, downloads }) {
+      pageUrl = url;
       document.querySelector('[data-item="downloads"]').hidden = hidden.has("downloads") || !downloads;
       setFavicon(favicon);
       let shown = url;
@@ -216,7 +269,7 @@
 
   // Empty header area moves the window; double click toggles maximize.
   document.body.addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || e.target.closest("button")) return;
+    if (e.button !== 0 || e.target.closest("button, input")) return;
     if (e.detail === 2) invoke("toggle_maximize");
     else invoke("start_dragging");
   });

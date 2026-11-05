@@ -226,6 +226,111 @@ pub fn push_all(handle: &AppHandle) {
     }
 }
 
+const MENU_COPY_URL: &str = "header:copy_url:";
+const MENU_EDIT_URL: &str = "header:edit_url:";
+
+/// Native context menu of the page title (the header webview is too small for an HTML one).
+fn page_menu(handle: &AppHandle, window: &tauri::Window, label: &str) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    let copy = MenuItem::with_id(
+        handle,
+        format!("{MENU_COPY_URL}{label}"),
+        "Copy URL",
+        true,
+        None::<&str>,
+    )?;
+    let edit = MenuItem::with_id(
+        handle,
+        format!("{MENU_EDIT_URL}{label}"),
+        "Edit URL…",
+        true,
+        None::<&str>,
+    )?;
+    window.popup_menu(&Menu::with_items(handle, &[&copy, &edit])?)
+}
+
+/// App menu events (`Builder::on_menu_event`): the items of `page_menu`.
+pub fn menu_event(handle: &AppHandle, event: tauri::menu::MenuEvent) {
+    let id = event.id().as_ref();
+    if let Some(label) = id.strip_prefix(MENU_COPY_URL) {
+        if let Some(content) = handle.get_webview(&window::content_label(label)) {
+            if let Ok(url) = content.url() {
+                clipboard::set_text(url.as_str());
+            }
+        }
+    } else if let Some(label) = id.strip_prefix(MENU_EDIT_URL) {
+        if let Some(header) = handle.get_webview(&window::header_label(label)) {
+            // The keyboard focus is usually in the content webview.
+            let _ = header.set_focus();
+            let _ = header.eval("window.weboverlay && window.weboverlay.editUrl()");
+        }
+    }
+}
+
+/// URL typed in the header: http(s) only, `https://` added when there is no scheme.
+fn typed_url(text: &str) -> Option<Url> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let url = if text.contains("://") {
+        Url::parse(text).ok()?
+    } else {
+        Url::parse(&format!("https://{text}")).ok()?
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    url.host().is_some().then_some(url)
+}
+
+mod clipboard {
+    #[cfg(target_os = "linux")]
+    pub fn set_text(text: &str) {
+        gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).set_text(text);
+    }
+
+    #[cfg(windows)]
+    pub fn set_text(text: &str) {
+        use windows::Win32::Foundation::{GlobalFree, HANDLE};
+        use windows::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+        use windows::Win32::System::Ole::CF_UNICODETEXT;
+
+        let wide: Vec<u16> = text.encode_utf16().chain([0]).collect();
+        // SAFETY: the allocation holds `wide`; once `SetClipboardData` succeeds the system owns it.
+        unsafe {
+            if OpenClipboard(None).is_err() {
+                return;
+            }
+            if EmptyClipboard().is_ok() {
+                if let Ok(mem) = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2) {
+                    let ptr = GlobalLock(mem).cast::<u16>();
+                    if !ptr.is_null() {
+                        std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+                        let _ = GlobalUnlock(mem);
+                        if SetClipboardData(u32::from(CF_UNICODETEXT.0), Some(HANDLE(mem.0)))
+                            .is_err()
+                        {
+                            let _ = GlobalFree(Some(mem));
+                        }
+                    } else {
+                        let _ = GlobalFree(Some(mem));
+                    }
+                }
+            }
+            let _ = CloseClipboard();
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", windows)))]
+    pub fn set_text(_text: &str) {}
+}
+
 /// Zoom level after a step in `direction` (-1, +1), clamped and rounded to the step.
 fn next_zoom(current: f64, direction: i8) -> f64 {
     let steps = (current / ZOOM_STEP).round() + f64::from(direction.signum());
@@ -233,7 +338,7 @@ fn next_zoom(current: f64, direction: i8) -> f64 {
 }
 
 #[tauri::command]
-pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
+pub fn header_action(webview: Webview, action: String, url: Option<String>) -> Result<(), String> {
     let window = webview.window();
     let label = window.label().to_owned();
     if webview.label() != window::header_label(&label) {
@@ -254,6 +359,11 @@ pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
                 None => Ok(()),
             }
         }
+        "navigate" => {
+            let url = url.as_deref().and_then(typed_url).ok_or("invalid URL")?;
+            content.navigate(url)
+        }
+        "page_menu" => page_menu(handle, &window, &label),
         "external" => {
             if let Ok(url) = content.url() {
                 window::open_external(&url);
@@ -314,6 +424,21 @@ pub fn header_action(webview: Webview, action: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_urls() {
+        let url = |s| typed_url(s).map(|u| u.to_string());
+        assert_eq!(url(" example.com/a "), Some("https://example.com/a".into()));
+        assert_eq!(
+            url("localhost:8000"),
+            Some("https://localhost:8000/".into())
+        );
+        assert_eq!(url("http://x.org"), Some("http://x.org/".into()));
+        assert_eq!(url("file:///etc/passwd"), None);
+        assert_eq!(url("javascript://x"), None);
+        assert_eq!(url("javascript:alert(1)"), None);
+        assert_eq!(url(""), None);
+    }
 
     #[test]
     fn favicon_only_image_safe_urls() {

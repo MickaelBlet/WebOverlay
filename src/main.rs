@@ -199,6 +199,7 @@ fn main() -> ExitCode {
             dirty: Default::default(),
             import: Default::default(),
         })
+        .on_menu_event(header::menu_event)
         .invoke_handler(tauri::generate_handler![
             header::header_action,
             editor::editor_files,
