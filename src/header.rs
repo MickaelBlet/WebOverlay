@@ -384,6 +384,15 @@ pub fn header_action(webview: Webview, action: String, url: Option<String>) -> R
                 crash::kill(&content);
                 Ok(())
             }
+            // The failed load may be the first one: nothing to reload.
+            #[cfg(target_os = "linux")]
+            Some(crash::Failure::Network) => {
+                let url = lock(handle).get(&label).and_then(|s| s.url.parse().ok());
+                match url {
+                    Some(url) => content.navigate(url),
+                    None => content.reload(),
+                }
+            }
             _ => content.reload(),
         },
         "home" => {

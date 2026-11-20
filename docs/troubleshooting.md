@@ -17,6 +17,10 @@ system RAM, capped at 3 GB; WebView2: when memory runs out) or crashes. WebOverl
 page; if it crashes again within a minute, the header shows `Page closed: out of memory` (or
 `Page crashed`): click it (or `F5`) to reload.
 
+Linux: if WebKit's network process crashes (the log shows `WebKit encountered an internal error`),
+the page being loaded is loaded again; on a second failure within a minute the header shows
+`Page load failed: network process crashed`: click it to retry.
+
 ## Page not responding
 
 A page busy in a script (infinite loop, heavy computation) stops reacting to clicks and keys: after

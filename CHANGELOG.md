@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Linux: when WebKit's network process crashes, the page being loaded no longer shows `WebKit encountered an internal error`: it is loaded again; if it fails again within a minute, the header shows `Page load failed: network process crashed` with a reload button.
+
 ## [0.2.8] - 2026-11-06
 
 ### Added

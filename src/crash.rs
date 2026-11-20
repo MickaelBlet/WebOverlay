@@ -3,6 +3,8 @@
 //! - Crash (out of memory, ...): the webview stays blank, so the page is reloaded. A page that
 //!   crashes again within `LOOP_WINDOW` is left alone (no reload loop; the local header is always
 //!   reloaded): for the content, the header then shows the crash with a reload button.
+//! - Network process crash (Linux): the loads in flight fail with a WebKit internal error, the
+//!   page being loaded shows it: handled like a crash.
 //! - Content not responding (frozen page): the header shows it until the page responds again; its
 //!   reload button then kills the web process (`kill`) and reloads the page.
 
@@ -27,6 +29,8 @@ static KILLED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 pub enum Failure {
     Memory,
     Crash,
+    #[cfg(target_os = "linux")]
+    Network,
     Unresponsive,
 }
 
@@ -35,6 +39,8 @@ impl Failure {
         match self {
             Failure::Memory => "Page closed: out of memory",
             Failure::Crash => "Page crashed",
+            #[cfg(target_os = "linux")]
+            Failure::Network => "Page load failed: network process crashed",
             Failure::Unresponsive => "Page not responding",
         }
     }
@@ -103,26 +109,43 @@ fn is_content(webview: &Webview) -> bool {
 
 /// Main thread, outside the crash event.
 fn crashed(webview: &Webview, failure: Failure) {
-    let label = webview.label();
     #[cfg(windows)]
     {
         let mut killed = lock(&KILLED);
-        if let Some(i) = killed.iter().position(|l| l == label) {
+        if let Some(i) = killed.iter().position(|l| l == webview.label()) {
             killed.remove(i);
             drop(killed);
             let _ = webview.reload();
             return;
         }
     }
-    eprintln!("weboverlay: {label}: {}", failure.message());
-    let window = webview.window();
+    let reload = should_reload(webview);
+    recover(webview, failure, reload, None);
+}
+
+/// Whether the page of `webview` is reloaded after a failure now (records it).
+fn should_reload(webview: &Webview) -> bool {
+    let label = webview.label();
     // The header is a local page: always reloaded.
-    let repeated = label != window::header_label(window.label())
-        && repeated(&mut lock(&LAST), label, Instant::now());
-    if !repeated {
-        let _ = webview.reload();
+    label == window::header_label(webview.window().label())
+        || !repeated(&mut lock(&LAST), label, Instant::now())
+}
+
+/// Main thread, outside the failure event: reloads the page (or loads `url`, the failed load)
+/// or shows the failure.
+fn recover(webview: &Webview, failure: Failure, reload: bool, url: Option<tauri::Url>) {
+    eprintln!("weboverlay: {}: {}", webview.label(), failure.message());
+    if reload {
+        let _ = match url {
+            Some(url) => webview.navigate(url),
+            None => webview.reload(),
+        };
     } else if is_content(webview) {
-        header::set_failure(webview.app_handle(), window.label(), Some(failure));
+        header::set_failure(
+            webview.app_handle(),
+            webview.window().label(),
+            Some(failure),
+        );
     }
 }
 
@@ -179,6 +202,27 @@ mod linux {
                         }
                     }
                 });
+            }
+        });
+        // WebKit relaunches a crashed network process, but the loads in flight fail with an
+        // internal error (`WebLoaderStrategy::internallyFailedLoadTimerFired`), shown as the page.
+        // Its domain has no public enum (`API::Error::webKitErrorDomain`).
+        let internal = glib::Quark::from_str("WebKitErrorDomain");
+        view.connect_load_failed({
+            let webview = webview.clone();
+            move |_, _, uri, error| {
+                if error.domain() != internal {
+                    return false;
+                }
+                let reload = super::should_reload(&webview);
+                // A failed first load has nothing to reload.
+                let url = uri.parse().ok();
+                let webview = webview.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    super::recover(&webview, Failure::Network, reload, url)
+                });
+                // No error page: it would replace the reload, or clear the header failure.
+                true
             }
         });
         view.connect_is_web_process_responsive_notify(move |view| {
