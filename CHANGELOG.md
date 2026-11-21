@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Header: the downloads button shows a blue dot while a download is in progress and a green one when a download ended since the downloads window was last opened, so downloads opened automatically (`open_downloads`) are visible too.
+
 ### Fixed
 
 - Linux: when WebKit's network process crashes, the page being loaded no longer shows `WebKit encountered an internal error`: it is loaded again; if it fails again within a minute, the header shows `Page load failed: network process crashed` with a reload button.

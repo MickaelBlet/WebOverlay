@@ -14,7 +14,7 @@ replaced by the header:
 | Home | Back to the config `url` |
 | Favicon, title, URL | Current page; drag the header to move the window, double click to maximize, right click for `Copy URL` / `Edit URL…` (`Enter` opens the typed URL, `https://` added when missing; `Esc` cancels) |
 | Zoom − / % / + | Page zoom; the percentage resets it to the config `zoom` |
-| Downloads | Shown after the first download, opens the downloads window |
+| Downloads | Shown after the first download, opens the downloads window; a blue dot while a download is in progress, a green one when a download ended since the window was last opened (downloads opened automatically included) |
 | Vault (key) | Fill the saved login, or open the [vault](vault.md) |
 | Edit (pencil) | Open the [editor](editor.md) |
 | Devtools (terminal) | Developer tools (`F12` / `Ctrl+Shift+I` with the header focused) |

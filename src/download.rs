@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -56,6 +56,8 @@ struct Item {
     received: u64,
     total: Option<u64>,
     state: State,
+    /// Ended while the downloads window wasn't shown: badge on the header button.
+    unseen: bool,
 }
 
 /// What the downloads page shows of an item.
@@ -76,6 +78,8 @@ static ITEMS: Mutex<Vec<Item>> = Mutex::new(Vec::new());
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 /// A download was started in this process: the header shows its downloads button.
 static STARTED: AtomicBool = AtomicBool::new(false);
+/// Set by `setup`: `finish` / `cancel` come from native callbacks without a window.
+static HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
 thread_local! {
     /// Main thread: cancels native download `id` (WebKit / COM objects are not `Send`).
@@ -89,6 +93,33 @@ fn items() -> MutexGuard<'static, Vec<Item>> {
 /// Some download was started: the header shows its downloads button.
 pub fn started() -> bool {
     STARTED.load(Ordering::Relaxed)
+}
+
+/// Badge of the header downloads button: `running` while a download is in progress, `done`
+/// when one ended since the downloads window was last shown.
+pub fn badge() -> Option<&'static str> {
+    let list = items();
+    if list.iter().any(|i| i.state == State::Running) {
+        Some("running")
+    } else if list.iter().any(|i| i.unseen) {
+        Some("done")
+    } else {
+        None
+    }
+}
+
+/// Refreshes the header downloads button.
+fn changed() {
+    if let Some(handle) = HANDLE.get() {
+        header::push_all(handle);
+    }
+}
+
+/// The downloads window is open and not minimized.
+fn window_shown(handle: &AppHandle) -> bool {
+    handle
+        .get_webview_window(DOWNLOADS_LABEL)
+        .is_some_and(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
 }
 
 /// Main thread: download of `url` saved at `path` by a webview of `parent` (an app window),
@@ -119,11 +150,11 @@ fn start(
         received: 0,
         total,
         state: State::Running,
+        unseen: false,
     });
     CANCEL.with(|c| c.borrow_mut().insert(id, cancel));
-    if !STARTED.swap(true, Ordering::Relaxed) {
-        header::push_all(parent.app_handle());
-    }
+    STARTED.store(true, Ordering::Relaxed);
+    header::push_all(parent.app_handle());
     id
 }
 
@@ -151,8 +182,10 @@ fn finish(id: u64, path: Option<PathBuf>, success: bool) {
             item.received = size;
             item.total = Some(size);
         }
+        item.unseen = !HANDLE.get().is_some_and(window_shown);
     }
     settle(id);
+    changed();
 }
 
 /// Main thread: cancels download `id` if still running.
@@ -167,6 +200,7 @@ fn cancel(id: u64) {
         cancel();
     }
     settle(id);
+    changed();
 }
 
 /// Shows the "save as" dialog for download `id`, suggesting `path`.
@@ -278,6 +312,7 @@ fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
 /// Native download tracking of a content webview or a popup (`popup` = its window); `parent`
 /// = the app window (owner of the dialogs: a popup may close before they open).
 pub fn setup(webview: &Webview, parent: Window, popup: Option<WebviewWindow>) {
+    let _ = HANDLE.set(webview.app_handle().clone());
     #[cfg(target_os = "linux")]
     let _ = webview.with_webview(move |webview| linux::setup(webview.inner(), parent, popup));
     #[cfg(windows)]
@@ -629,6 +664,13 @@ fn is_download(disposition: Option<&str>, content_type: Option<&str>) -> bool {
 /// Opens the downloads window, or focuses it when already open. Not from a sync command (see
 /// `editor::open`): `open_later` there.
 pub fn open(handle: &AppHandle) -> tauri::Result<()> {
+    let mut seen = false;
+    for item in items().iter_mut() {
+        seen |= std::mem::take(&mut item.unseen);
+    }
+    if seen {
+        header::push_all(handle);
+    }
     if let Some(window) = handle.get_webview_window(DOWNLOADS_LABEL) {
         let _ = window.unminimize();
         let _ = window.show();

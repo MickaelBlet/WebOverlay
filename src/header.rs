@@ -62,6 +62,8 @@ struct HeaderState<'a> {
     maximized: bool,
     /// Shows the downloads button (once something was downloaded).
     downloads: bool,
+    /// Badge of the downloads button: `running` / `done` (`download::badge`).
+    downloads_badge: Option<&'static str>,
     /// Failure message, shown with a reload button.
     failure: Option<&'static str>,
 }
@@ -237,6 +239,7 @@ pub fn push_state(handle: &AppHandle, label: &str) {
             zoom: state.zoom,
             maximized,
             downloads: download::started(),
+            downloads_badge: download::badge(),
             failure: state.failure.map(crash::Failure::message),
         };
         let json = serde_json::to_string(&header_state).expect("state serializes");

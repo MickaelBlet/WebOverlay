@@ -105,6 +105,20 @@
   .win button { width: 40px; height: 29px; border-radius: 0; }
   .win svg { width: 12px; height: 12px; stroke-width: 1.5; }
   .win #close:hover { background: var(--close); color: #fff; }
+  [data-item="downloads"] { position: relative; }
+  [data-item="downloads"][data-badge]::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1.5px var(--bg);
+  }
+  [data-item="downloads"][data-badge="running"]::after { background: #2563eb; animation: pulse 1s ease-in-out infinite alternate; }
+  [data-item="downloads"][data-badge="done"]::after { background: #16a34a; }
+  @keyframes pulse { to { opacity: 0.3; } }
   #restore-icon { display: none; }
   body.maximized #maximize-icon { display: none; }
   body.maximized #restore-icon { display: block; }
@@ -252,9 +266,13 @@
       input.focus();
       input.select();
     },
-    update({ title, url, favicon, zoom, maximized, downloads, failure }) {
+    update({ title, url, favicon, zoom, maximized, downloads, downloads_badge, failure }) {
       pageUrl = url;
-      document.querySelector('[data-item="downloads"]').hidden = hidden.has("downloads") || !downloads;
+      const dl = document.querySelector('[data-item="downloads"]');
+      dl.hidden = hidden.has("downloads") || !downloads;
+      if (downloads_badge) dl.dataset.badge = downloads_badge;
+      else delete dl.dataset.badge;
+      dl.title = { running: "Downloads (in progress)", done: "Downloads (finished)" }[downloads_badge] || "Downloads";
       setFavicon(favicon);
       let shown = url;
       try {
