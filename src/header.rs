@@ -372,11 +372,8 @@ pub fn header_action(
     webview: Webview,
     action: String,
     url: Option<String>,
-    text: Option<String>,
+    find: Option<crate::find::Query>,
 ) -> Result<(), String> {
-    // Find in page: WebView2 has its own find bar.
-    #[cfg(not(target_os = "linux"))]
-    let _ = text;
     let window = webview.window();
     let label = window.label().to_owned();
     if webview.label() != window::header_label(&label) {
@@ -417,10 +414,7 @@ pub fn header_action(
             let url = url.as_deref().and_then(typed_url).ok_or("invalid URL")?;
             content.navigate(url)
         }
-        #[cfg(target_os = "linux")]
-        "find" | "find_next" | "find_prev" | "find_close" => {
-            return crate::find::action(&content, &action, text);
-        }
+        "find" | "find_close" => return crate::find::action(&content, &action, find),
         "page_menu" => page_menu(handle, &window, &label),
         "external" => {
             if let Ok(url) = content.url() {

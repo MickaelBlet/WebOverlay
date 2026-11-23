@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- Linux: `Ctrl+F` finds text in the page: the header shows a find field with the match count (`Enter` / `Shift+Enter`, `F3` / `Shift+F3`, `Esc` closes), like the WebView2 find bar on Windows.
+- Find in page (`Ctrl+F`), VSCode style, on Linux and Windows: the header shows a find field with Match Case (`Alt+C`), Match Whole Word (`Alt+W`) and Use Regular Expression (`Alt+R`) toggles (remembered), `n of m` counter, `Enter` / `Shift+Enter` or `F3` / `Shift+F3` for next / previous, `Esc` closes. All matches are highlighted, the current one in orange; the search runs again when the page loads. It replaces the WebView2 find bar on Windows; Linux had none.
 
 ## [0.2.9] - 2026-11-23
 

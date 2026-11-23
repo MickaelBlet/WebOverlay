@@ -98,11 +98,17 @@
   }
   #url-input:focus { border-color: #2563eb; }
   #page.editing > :not(#url-input) { display: none !important; }
-  #find { flex: 1; min-width: 0; max-width: 420px; display: flex; align-items: center; gap: 2px; align-self: center; }
-  #find-input { flex: 1; min-width: 0; height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: inherit; font: inherit; outline: none; user-select: text; -webkit-user-select: text; }
+  #find { flex: 1; min-width: 0; max-width: 460px; display: flex; align-items: center; gap: 2px; align-self: center; }
+  #find-field { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+  #find-input { flex: 1; min-width: 0; height: 22px; padding: 0 70px 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: inherit; font: inherit; outline: none; user-select: text; -webkit-user-select: text; }
   #find-input:focus { border-color: #2563eb; }
   #find.none #find-input { border-color: var(--close); }
-  #find-count { min-width: 64px; padding: 0 6px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  #find-options { position: absolute; right: 2px; display: flex; gap: 1px; }
+  #find-options button { width: 22px; height: 18px; border: 1px solid transparent; border-radius: 4px; font: 600 11px ui-monospace, "Cascadia Mono", Menlo, monospace; color: var(--muted); }
+  #find-options button[aria-pressed="true"] { color: var(--fg); background: rgba(37, 99, 235, 0.22); border-color: #2563eb; }
+  #find-options u { text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  #find-count { min-width: 72px; padding: 0 6px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #find.none #find-count, #find.error #find-count { color: var(--close); }
   #page.finding > :not(#find) { display: none !important; }
   #failure { width: auto; height: 22px; align-self: center; padding: 0 8px; gap: 6px; display: flex; align-items: center; color: var(--close); font-weight: 600; }
   #page.failed > #title, #page.failed > #url { display: none; }
@@ -158,12 +164,19 @@
     <span id="url" data-item="url"></span>
     <input id="url-input" type="text" spellcheck="false" autocomplete="off" hidden>
     <div id="find" hidden>
-      <input id="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="Find in page">
+      <div id="find-field">
+        <input id="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="Find in page">
+        <div id="find-options">
+          <button data-option="case" title="Match Case (Alt+C)" aria-pressed="false">Aa</button>
+          <button data-option="word" title="Match Whole Word (Alt+W)" aria-pressed="false"><u>ab</u></button>
+          <button data-option="regex" title="Use Regular Expression (Alt+R)" aria-pressed="false">.*</button>
+        </div>
+      </div>
       <span id="find-count"></span>
-      <button data-find="find_prev" title="Previous (Shift+Enter)">
+      <button data-find="find_prev" title="Previous Match (Shift+Enter, Shift+F3)">
         <svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>
       </button>
-      <button data-find="find_next" title="Next (Enter)">
+      <button data-find="find_next" title="Next Match (Enter, F3)">
         <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <button data-find="find_close" title="Close (Escape)">
@@ -270,34 +283,70 @@
   });
   input.addEventListener("blur", stopEditing);
 
-  // Find in page (Linux, opened by Ctrl+F in the content): drives WebKit's find controller.
+  // Find in page (Ctrl+F, caught natively in the content): `FIND_JS` of src/find.rs runs in the
+  // content page, results come back through `findResult`.
   const findBar = $("find");
   const findInput = $("find-input");
-  const findCount = (count) => {
-    $("find-count").textContent = count == null ? "" : count === 1 ? "1 match" : `${count} matches`;
-    findBar.classList.toggle("none", count === 0);
+  const findOptions = { case: false, word: false, regex: false };
+  try {
+    Object.assign(findOptions, JSON.parse(localStorage.getItem("weboverlay.find") || "{}"));
+  } catch (_) {}
+  let findSeq = 0;
+  const showOptions = () => {
+    for (const b of findBar.querySelectorAll("[data-option]")) b.setAttribute("aria-pressed", String(!!findOptions[b.dataset.option]));
+  };
+  showOptions();
+  const showCount = (text, state) => {
+    $("find-count").textContent = text;
+    findBar.classList.toggle("none", state === "none");
+    findBar.classList.toggle("error", state === "error");
+  };
+  const runFind = (step, scroll = true) => {
+    const text = findInput.value;
+    if (!text) showCount("", null);
+    invoke("find", { find: { text, case: !!findOptions.case, word: !!findOptions.word, regex: !!findOptions.regex, step, scroll, seq: ++findSeq } });
+  };
+  const toggleOption = (name) => {
+    findOptions[name] = !findOptions[name];
+    try { localStorage.setItem("weboverlay.find", JSON.stringify(findOptions)); } catch (_) {}
+    showOptions();
+    runFind(0);
   };
   const closeFind = () => {
     if (findBar.hidden) return;
     findBar.hidden = true;
     $("page").classList.remove("finding");
+    findSeq++;
     invoke("find_close");
   };
-  findInput.addEventListener("input", () => invoke("find", { text: findInput.value }));
+  findInput.addEventListener("input", () => runFind(0));
   findInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === "F3") {
+    const option = e.altKey && !e.ctrlKey && { c: "case", w: "word", r: "regex" }[e.key.toLowerCase()];
+    if (option) {
       e.preventDefault();
-      if (findInput.value) invoke(e.shiftKey ? "find_prev" : "find_next");
+      toggleOption(option);
+    } else if (e.key === "Enter" || e.key === "F3") {
+      e.preventDefault();
+      if (findInput.value) runFind(e.shiftKey ? -1 : 1);
     } else if (e.key === "Escape") {
       e.preventDefault();
       closeFind();
+    } else if (e.ctrlKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      findInput.select();
     }
     e.stopPropagation();
   });
+  for (const button of findBar.querySelectorAll("button[data-option]")) {
+    // Keep the focus (and the caret) in the field.
+    button.addEventListener("mousedown", (e) => e.preventDefault());
+    button.addEventListener("click", () => toggleOption(button.dataset.option));
+  }
   for (const button of findBar.querySelectorAll("button[data-find]")) {
+    button.addEventListener("mousedown", (e) => e.preventDefault());
     button.addEventListener("click", () => {
       if (button.dataset.find === "find_close") closeFind();
-      else if (findInput.value) invoke(button.dataset.find);
+      else if (findInput.value) runFind(button.dataset.find === "find_prev" ? -1 : 1);
     });
   }
 
@@ -311,13 +360,27 @@
   window.weboverlay = {
     find() {
       stopEditing();
+      const opening = findBar.hidden;
       findBar.hidden = false;
       $("page").classList.add("finding");
       findInput.focus();
       findInput.select();
-      if (findInput.value) invoke("find", { text: findInput.value });
+      if (opening && findInput.value) runFind(0);
     },
-    findCount,
+    findStep(step) {
+      if (findBar.hidden || !findInput.value) return this.find();
+      runFind(step);
+    },
+    findRefresh() {
+      if (!findBar.hidden && findInput.value) runFind(0, false);
+    },
+    findResult({ seq, count, index, error, capped }) {
+      if (seq !== findSeq) return;
+      if (!findInput.value) showCount("", null);
+      else if (error) showCount("Invalid regex", "error");
+      else if (!count) showCount("No results", "none");
+      else showCount(`${index + 1} of ${count}${capped ? "+" : ""}`, null);
+    },
     editUrl() {
       closeFind();
       input.value = pageUrl;
@@ -367,7 +430,13 @@
     if (e.altKey && e.key === "ArrowLeft") action = "back";
     else if (e.altKey && e.key === "ArrowRight") action = "forward";
     else if (e.key === "F5" || (e.ctrlKey && e.key.toLowerCase() === "r")) action = "reload";
-    else if (e.key === "F12" || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "i")) action = "devtools";
+    else if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      return window.weboverlay.find();
+    } else if (e.key === "F3" && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      return window.weboverlay.findStep(e.shiftKey ? -1 : 1);
+    } else if (e.key === "F12" || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "i")) action = "devtools";
     if (!action) return;
     e.preventDefault();
     invoke(action);

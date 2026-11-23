@@ -12,7 +12,7 @@ replaced by the header:
 | Back / forward | `Alt+←` / `Alt+→` (always enabled) |
 | Reload | `F5` / `Ctrl+R` |
 | Home | Back to the config `url` |
-| Find in page | `Ctrl+F`: Windows shows the WebView2 find bar; Linux replaces the title with a find field (match count, `Enter` / `Shift+Enter` or `F3` / `Shift+F3` for next / previous, `Esc` closes) |
+| Find in page | `Ctrl+F` replaces the title with a find field: Match Case `Aa` (`Alt+C`), Match Whole Word `ab` (`Alt+W`), Use Regular Expression `.*` (JavaScript syntax, `Alt+R`), match counter; `Enter` / `Shift+Enter` or `F3` / `Shift+F3` for next / previous, `Esc` closes. Hidden text, iframes and shadow DOM are not searched |
 | Favicon, title, URL | Current page; drag the header to move the window, double click to maximize, right click for `Copy URL` / `Edit URL…` (`Enter` opens the typed URL, `https://` added when missing; `Esc` cancels) |
 | Zoom − / % / + | Page zoom; the percentage resets it to the config `zoom` |
 | Downloads | Shown after the first download, opens the downloads window; a blue dot while a download is in progress, a green one when a download ended since the window was last opened (downloads opened automatically included) |

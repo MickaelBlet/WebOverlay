@@ -162,6 +162,7 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
             let _ = webview.show();
             header::refresh_favicon(&webview);
             vault::autofill(&webview);
+            crate::find::page_loaded(&webview);
         }
         let window = webview.window();
         header::set_page(
@@ -205,7 +206,6 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     content_webview.hide()?;
     download::setup(&content_webview, window.clone(), None);
     crash::setup(&content_webview);
-    #[cfg(target_os = "linux")]
     crate::find::setup(&content_webview);
     if app.config.zoom != 1.0 {
         let _ = content_webview.set_zoom(app.config.zoom);

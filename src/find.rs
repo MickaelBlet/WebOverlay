@@ -1,124 +1,338 @@
-//! Find in page (Linux): WebKitGTK has no find bar (WebView2 has its own, on Ctrl+F). Ctrl+F in
-//! the content opens the header find field (`window.weboverlay.find()`), whose `find*` header
-//! actions drive the content `WebKitFindController`; match counts go back to the header.
+//! Find in page, VSCode style (match case, whole word, regex): the header find field (`#find` of
+//! `dist/header.html`) drives `FIND_JS`, run in the content page. Neither WebKit's find controller
+//! nor WebView2's find bar has whole word / regex matching, and the remote content has no IPC, so
+//! `Ctrl+F` / `F3` are caught natively (GTK `key-press-event`, WebView2 `AcceleratorKeyPressed`,
+//! which also hides the WebView2 find bar) and forwarded to the header.
 
-use gtk::gdk;
-use gtk::glib::Propagation;
-use gtk::prelude::*;
+use serde::{Deserialize, Serialize};
 use tauri::{Manager, Webview};
-use webkit2gtk::glib;
-use webkit2gtk::{FindController, FindControllerExt, FindOptions, WebViewExt};
 
 use crate::window;
 
-/// Matches counted at most (WebKit reports `u32::MAX` beyond it).
-const MAX_MATCHES: u32 = 1000;
+/// Search in the content page: `query` = a `Query` (JSON), `null` clears the highlights.
+/// Visible text nodes of the main document (no shadow DOM, no iframes) are joined and matched
+/// with one `RegExp`; matches become `Range`s highlighted with the CSS Custom Highlight API
+/// (current one: selection without it). The page controls the returned value: Rust only keeps
+/// numbers out of it.
+const FIND_JS: &str = r#"((q) => {
+  const KEY = Symbol.for("weboverlay.find");
+  const st = window[KEY] || (window[KEY] = { key: null, index: -1, sheet: null });
+  const hl = typeof Highlight === "function" && window.CSS && CSS.highlights;
+  // Kept registered and emptied: WebKit doesn't repaint after `CSS.highlights.delete`.
+  if (hl && !st.all) {
+    st.all = new Highlight();
+    st.current = new Highlight();
+    st.current.priority = 1;
+  }
+  const clear = () => {
+    if (hl) {
+      st.all.clear();
+      st.current.clear();
+    }
+  };
+  clear();
+  if (!q || !q.text) {
+    st.key = null;
+    st.index = -1;
+    return { count: 0, index: -1, error: false, capped: false };
+  }
+  let re;
+  try {
+    let src = q.regex ? q.text : q.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (q.word) src = `(?<![\\p{L}\\p{N}_])(?:${src})(?![\\p{L}\\p{N}_])`;
+    re = new RegExp(src, q.case ? "gmu" : "gimu");
+  } catch (_) {
+    st.key = null;
+    return { count: 0, index: -1, error: true, capped: false };
+  }
+  if (hl && !(st.sheet && document.adoptedStyleSheets.includes(st.sheet))) {
+    try {
+      st.sheet = new CSSStyleSheet();
+      st.sheet.replaceSync(
+        "::highlight(weboverlay-find){background-color:rgba(255,200,0,.45)}" +
+        "::highlight(weboverlay-find-current){background-color:#ff9632;color:#000}");
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, st.sheet];
+    } catch (_) {}
+  }
+  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|TEXTAREA|SELECT|OPTION)$/;
+  const seen = new Map();
+  const visible = (el) => {
+    let v = seen.get(el);
+    if (v === undefined) {
+      v = !SKIP.test(el.tagName) && (el.checkVisibility
+        ? el.checkVisibility({ visibilityProperty: true })
+        : el.getClientRects().length > 0);
+      seen.set(el, v);
+    }
+    return v;
+  };
+  const nodes = [];
+  let text = "";
+  const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+  for (let n; (n = walker.nextNode()); ) {
+    if (!n.data || !n.parentElement || !visible(n.parentElement)) continue;
+    nodes.push({ n, start: text.length });
+    text += n.data;
+  }
+  // Node holding text offset `off`: the last one starting at or before it (`end`: before it).
+  const nodeAt = (off, end) => {
+    let lo = 0, hi = nodes.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (end ? nodes[mid].start < off : nodes[mid].start <= off) lo = mid;
+      else hi = mid - 1;
+    }
+    return nodes[lo];
+  };
+  const MAX = 10000;
+  const ranges = [];
+  for (const m of text.matchAll(re)) {
+    if (!m[0].length) continue;
+    if (ranges.length === MAX) break;
+    const end = m.index + m[0].length;
+    const a = nodeAt(m.index, false), b = nodeAt(end, true);
+    const r = document.createRange();
+    r.setStart(a.n, m.index - a.start);
+    r.setEnd(b.n, end - b.start);
+    ranges.push(r);
+  }
+  const key = JSON.stringify([q.text, q.case, q.word, q.regex]);
+  let index = -1;
+  if (ranges.length) {
+    if (key === st.key && st.index >= 0) {
+      index = (Math.min(st.index, ranges.length - 1) + q.step + ranges.length) % ranges.length;
+    } else {
+      // New search: first match from the top of the viewport.
+      index = Math.max(0, ranges.findIndex((r) => r.getBoundingClientRect().bottom >= 0));
+    }
+  }
+  st.key = key;
+  st.index = index;
+  if (index < 0) return { count: 0, index: -1, error: false, capped: false };
+  const current = ranges[index];
+  if (hl) {
+    for (const r of ranges) st.all.add(r);
+    st.current.add(current);
+    // Registered again in case the page cleared `CSS.highlights`.
+    CSS.highlights.set("weboverlay-find", st.all);
+    CSS.highlights.set("weboverlay-find-current", st.current);
+  } else {
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(current);
+  }
+  if (q.scroll) {
+    const out = (r) => r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth;
+    if (out(current.getBoundingClientRect())) {
+      const el = current.startContainer.parentElement;
+      if (el) el.scrollIntoView({ block: "center", inline: "nearest" });
+      // A large element: center the match itself.
+      const r = current.getBoundingClientRect();
+      if (out(r)) scrollBy(r.left < 0 || r.right > innerWidth ? r.left - innerWidth / 2 : 0, r.top - innerHeight / 2);
+    }
+  }
+  return { count: ranges.length, index, error: false, capped: ranges.length === MAX };
+})"#;
 
-/// Ctrl+F / F3 / Shift+F3 in the content webview and match counts sent to the header.
+/// Search sent by the header (`header_action` `find` argument).
+#[derive(Deserialize, Serialize)]
+pub struct Query {
+    text: String,
+    case: bool,
+    word: bool,
+    regex: bool,
+    /// 0 = search again / new search, 1 = next match, -1 = previous one.
+    step: i8,
+    /// Scrolls to the current match (not when refreshing after a page load).
+    scroll: bool,
+    /// Echoed back: the header ignores results of older searches.
+    seq: u32,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Found {
+    count: u32,
+    index: i64,
+    error: bool,
+    capped: bool,
+}
+
+#[derive(Serialize)]
+struct Reply {
+    seq: u32,
+    #[serde(flatten)]
+    found: Found,
+}
+
+/// Header `find*` actions: `find` (runs `query`), `find_close` (clears the highlights and gives
+/// the focus back to the page).
+pub fn action(content: &Webview, action: &str, query: Option<Query>) -> Result<(), String> {
+    match action {
+        "find" => {
+            let query = query.ok_or("missing query")?;
+            let seq = query.seq;
+            let json = serde_json::to_string(&query).expect("query serializes");
+            let view = content.clone();
+            content
+                .eval_with_callback(format!("{FIND_JS}({json})"), move |result| {
+                    let found = serde_json::from_str::<Found>(&result).unwrap_or(Found {
+                        count: 0,
+                        index: -1,
+                        error: false,
+                        capped: false,
+                    });
+                    reply(&view, &Reply { seq, found });
+                })
+                .map_err(|e| e.to_string())
+        }
+        _ => {
+            let _ = content.eval(format!("{FIND_JS}(null)"));
+            content.set_focus().map_err(|e| e.to_string())
+        }
+    }
+}
+
+fn header(content: &Webview) -> Option<Webview> {
+    content
+        .app_handle()
+        .get_webview(&window::header_label(content.window().label()))
+}
+
+fn reply(content: &Webview, reply: &Reply) {
+    if let Some(header) = header(content) {
+        let json = serde_json::to_string(reply).expect("reply serializes");
+        let _ = header.eval(format!(
+            "window.weboverlay && window.weboverlay.findResult({json})"
+        ));
+    }
+}
+
+/// Key caught in the content page.
+enum Key {
+    /// `Ctrl+F`: opens (focuses) the find field.
+    Open,
+    /// `F3` / `Shift+F3`: next / previous match.
+    Step(i8),
+}
+
+fn key_pressed(content: &Webview, key: Key) {
+    let Some(header) = header(content) else {
+        return;
+    };
+    let js = match key {
+        Key::Open => {
+            let _ = header.set_focus();
+            "window.weboverlay && window.weboverlay.find()".to_owned()
+        }
+        Key::Step(step) => format!("window.weboverlay && window.weboverlay.findStep({step})"),
+    };
+    let _ = header.eval(js);
+}
+
+/// Content page loaded: the header searches it again when its find field is open.
+pub fn page_loaded(content: &Webview) {
+    if let Some(header) = header(content) {
+        let _ = header.eval("window.weboverlay && window.weboverlay.findRefresh()");
+    }
+}
+
+/// Catches `Ctrl+F` / `F3` / `Shift+F3` in the content webview.
 pub fn setup(content: &Webview) {
     let view = content.clone();
-    let _ = content.with_webview(move |webview| {
-        let inner = webview.inner();
-        inner.connect_key_press_event({
-            let view = view.clone();
-            move |webview, event| {
-                let state = event.state()
-                    & (gdk::ModifierType::CONTROL_MASK
-                        | gdk::ModifierType::SHIFT_MASK
-                        | gdk::ModifierType::MOD1_MASK);
-                let key = event.keyval().to_lower();
-                if key == gdk::keys::constants::f && state == gdk::ModifierType::CONTROL_MASK {
-                    let view = view.clone();
-                    // Outside the GTK handler: Tauri calls may need the webview's lock.
-                    glib::MainContext::default().spawn_local(async move { open(&view) });
-                    return Propagation::Stop;
-                }
-                if key == gdk::keys::constants::F3 {
-                    if let Some(finder) = webview.find_controller() {
-                        if finder.search_text().is_some_and(|t| !t.is_empty()) {
-                            if state.contains(gdk::ModifierType::SHIFT_MASK) {
-                                finder.search_previous();
-                            } else {
-                                finder.search_next();
-                            }
-                            return Propagation::Stop;
-                        }
-                    }
-                }
-                Propagation::Proceed
-            }
-        });
-        let Some(finder) = inner.find_controller() else {
-            return;
-        };
-        finder.connect_counted_matches({
-            let view = view.clone();
-            move |_, count| send_count(&view, Some(count))
-        });
-        finder.connect_failed_to_find_text(move |_| send_count(&view, Some(0)));
-    });
+    #[cfg(target_os = "linux")]
+    let _ = content.with_webview(move |webview| linux::setup(&webview.inner(), view));
+    #[cfg(windows)]
+    let _ = content.with_webview(move |webview| webview2::setup(&webview.controller(), view));
+    #[cfg(not(any(target_os = "linux", windows)))]
+    let _ = view;
 }
 
-/// Opens (or focuses) the find field of the header of `content`.
-fn open(content: &Webview) {
-    let handle = content.app_handle();
-    if let Some(header) = handle.get_webview(&window::header_label(content.window().label())) {
-        let _ = header.set_focus();
-        let _ = header.eval("window.weboverlay && window.weboverlay.find()");
+#[cfg(target_os = "linux")]
+mod linux {
+    use gtk::gdk;
+    use gtk::glib::Propagation;
+    use gtk::prelude::*;
+    use tauri::Webview;
+    use webkit2gtk::{glib, WebView};
+
+    use super::Key;
+
+    pub fn setup(view: &WebView, content: Webview) {
+        view.connect_key_press_event(move |_, event| {
+            let mods = event.state()
+                & (gdk::ModifierType::CONTROL_MASK
+                    | gdk::ModifierType::SHIFT_MASK
+                    | gdk::ModifierType::MOD1_MASK);
+            let keyval = event.keyval().to_lower();
+            let key =
+                if keyval == gdk::keys::constants::f && mods == gdk::ModifierType::CONTROL_MASK {
+                    Key::Open
+                } else if keyval == gdk::keys::constants::F3
+                    && !mods.contains(gdk::ModifierType::CONTROL_MASK)
+                {
+                    Key::Step(if mods.contains(gdk::ModifierType::SHIFT_MASK) {
+                        -1
+                    } else {
+                        1
+                    })
+                } else {
+                    return Propagation::Proceed;
+                };
+            let content = content.clone();
+            // Outside the GTK handler: Tauri calls may need the webview's lock.
+            glib::MainContext::default()
+                .spawn_local(async move { super::key_pressed(&content, key) });
+            Propagation::Stop
+        });
     }
 }
 
-fn send_count(content: &Webview, count: Option<u32>) {
-    let content = content.clone();
-    glib::MainContext::default().spawn_local(async move {
-        let handle = content.app_handle();
-        let Some(header) = handle.get_webview(&window::header_label(content.window().label()))
-        else {
-            return;
-        };
-        let count = match count {
-            Some(u32::MAX) => format!("\"{MAX_MATCHES}+\""),
-            Some(n) => n.to_string(),
-            None => "null".into(),
-        };
-        let _ = header.eval(format!(
-            "window.weboverlay && window.weboverlay.findCount({count})"
-        ));
-    });
-}
+#[cfg(windows)]
+mod webview2 {
+    use tauri::Webview;
+    use webview2_com::AcceleratorKeyPressedEventHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Controller, COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
+    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetKeyState, VIRTUAL_KEY, VK_CONTROL, VK_F, VK_F3, VK_MENU, VK_SHIFT,
+    };
 
-/// Header `find*` actions: `find` (new search for `text`, empty clears), `find_next`,
-/// `find_prev`, `find_close` (clears the highlights and gives the focus back to the page).
-pub fn action(content: &Webview, action: &str, text: Option<String>) -> Result<(), String> {
-    let text = text.unwrap_or_default();
-    let close = action == "find_close";
-    let action = action.to_owned();
-    let view = content.clone();
-    content
-        .with_webview(move |webview| {
-            let Some(finder) = webview.inner().find_controller() else {
-                return;
+    use super::Key;
+
+    pub fn setup(controller: &ICoreWebView2Controller, content: Webview) {
+        let handler = AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else {
+                return Ok(());
             };
-            match action.as_str() {
-                "find" if text.is_empty() => {
-                    finder.search_finish();
-                    send_count(&view, None);
-                }
-                "find" => search(&finder, &text),
-                "find_next" => finder.search_next(),
-                "find_prev" => finder.search_previous(),
-                _ => finder.search_finish(),
+            let (mut kind, mut vk) = (COREWEBVIEW2_KEY_EVENT_KIND::default(), 0u32);
+            unsafe {
+                args.KeyEventKind(&mut kind)?;
+                args.VirtualKey(&mut vk)?;
             }
-        })
-        .map_err(|e| e.to_string())?;
-    if close {
-        let _ = content.set_focus();
+            if kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN {
+                return Ok(());
+            }
+            let down = |key: VIRTUAL_KEY| unsafe { GetKeyState(i32::from(key.0)) } < 0;
+            let (ctrl, shift, alt) = (down(VK_CONTROL), down(VK_SHIFT), down(VK_MENU));
+            let key = if vk == u32::from(VK_F.0) && ctrl && !shift && !alt {
+                Key::Open
+            } else if vk == u32::from(VK_F3.0) && !ctrl && !alt {
+                Key::Step(if shift { -1 } else { 1 })
+            } else {
+                return Ok(());
+            };
+            // Also hides the WebView2 find bar.
+            unsafe { args.SetHandled(true)? };
+            let content = content.clone();
+            // Not inside the event: Tauri calls may run inline on the main thread.
+            let _ = content
+                .clone()
+                .run_on_main_thread(move || super::key_pressed(&content, key));
+            Ok(())
+        }));
+        if let Err(e) = unsafe { controller.add_AcceleratorKeyPressed(&handler, &mut 0) } {
+            eprintln!("weboverlay: cannot catch the find shortcuts: {e}");
+        }
     }
-    Ok(())
-}
-
-fn search(finder: &FindController, text: &str) {
-    let options = (FindOptions::CASE_INSENSITIVE | FindOptions::WRAP_AROUND).bits();
-    finder.count_matches(text, options, MAX_MATCHES);
-    finder.search(text, options, MAX_MATCHES);
 }
