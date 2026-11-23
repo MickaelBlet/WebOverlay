@@ -98,6 +98,12 @@
   }
   #url-input:focus { border-color: #2563eb; }
   #page.editing > :not(#url-input) { display: none !important; }
+  #find { flex: 1; min-width: 0; max-width: 420px; display: flex; align-items: center; gap: 2px; align-self: center; }
+  #find-input { flex: 1; min-width: 0; height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); color: inherit; font: inherit; outline: none; user-select: text; -webkit-user-select: text; }
+  #find-input:focus { border-color: #2563eb; }
+  #find.none #find-input { border-color: var(--close); }
+  #find-count { min-width: 64px; padding: 0 6px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  #page.finding > :not(#find) { display: none !important; }
   #failure { width: auto; height: 22px; align-self: center; padding: 0 8px; gap: 6px; display: flex; align-items: center; color: var(--close); font-weight: 600; }
   #page.failed > #title, #page.failed > #url { display: none; }
   #zoom { width: 40px; border-radius: 6px; font-variant-numeric: tabular-nums; font-size: 11px; }
@@ -151,6 +157,19 @@
     <span id="title" data-item="title"></span>
     <span id="url" data-item="url"></span>
     <input id="url-input" type="text" spellcheck="false" autocomplete="off" hidden>
+    <div id="find" hidden>
+      <input id="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="Find in page">
+      <span id="find-count"></span>
+      <button data-find="find_prev" title="Previous (Shift+Enter)">
+        <svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>
+      </button>
+      <button data-find="find_next" title="Next (Enter)">
+        <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button data-find="find_close" title="Close (Escape)">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
   </div>
 
   <div class="group">
@@ -251,6 +270,37 @@
   });
   input.addEventListener("blur", stopEditing);
 
+  // Find in page (Linux, opened by Ctrl+F in the content): drives WebKit's find controller.
+  const findBar = $("find");
+  const findInput = $("find-input");
+  const findCount = (count) => {
+    $("find-count").textContent = count == null ? "" : count === 1 ? "1 match" : `${count} matches`;
+    findBar.classList.toggle("none", count === 0);
+  };
+  const closeFind = () => {
+    if (findBar.hidden) return;
+    findBar.hidden = true;
+    $("page").classList.remove("finding");
+    invoke("find_close");
+  };
+  findInput.addEventListener("input", () => invoke("find", { text: findInput.value }));
+  findInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === "F3") {
+      e.preventDefault();
+      if (findInput.value) invoke(e.shiftKey ? "find_prev" : "find_next");
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeFind();
+    }
+    e.stopPropagation();
+  });
+  for (const button of findBar.querySelectorAll("button[data-find]")) {
+    button.addEventListener("click", () => {
+      if (button.dataset.find === "find_close") closeFind();
+      else if (findInput.value) invoke(button.dataset.find);
+    });
+  }
+
   // Right click on the page title: native menu (copy / edit the URL).
   $("page").addEventListener("contextmenu", (e) => {
     if (e.target === input) return;
@@ -259,7 +309,17 @@
   });
 
   window.weboverlay = {
+    find() {
+      stopEditing();
+      findBar.hidden = false;
+      $("page").classList.add("finding");
+      findInput.focus();
+      findInput.select();
+      if (findInput.value) invoke("find", { text: findInput.value });
+    },
+    findCount,
     editUrl() {
+      closeFind();
       input.value = pageUrl;
       input.hidden = false;
       $("page").classList.add("editing");
@@ -297,7 +357,7 @@
 
   // Empty header area moves the window; double click toggles maximize.
   document.body.addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || e.target.closest("button, input")) return;
+    if (e.button !== 0 || e.target.closest("button, input, #find")) return;
     if (e.detail === 2) invoke("toggle_maximize");
     else invoke("start_dragging");
   });

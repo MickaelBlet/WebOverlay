@@ -4,6 +4,8 @@ mod config;
 mod crash;
 mod download;
 mod editor;
+#[cfg(target_os = "linux")]
+mod find;
 mod header;
 mod icon;
 mod inject;
