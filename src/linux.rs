@@ -1,10 +1,13 @@
 //! Linux process environment, set at the very start of `main` (before GTK and before any thread,
 //! WebKit's helper processes inherit it).
 //!
-//! Without a usable GPU (virtual machine without 3D, no render node) WebKitGTK's accelerated
-//! compositing runs on Mesa's software rasterizer, which makes every page very slow; the
-//! non-composited mode is much faster there. `WEBOVERLAY_GPU=1` keeps the GPU path, `=0` forces
-//! the software one; variables already set by the user are never overridden.
+//! Without a usable GPU (virtual machine without 3D, no render node) Mesa is sent straight to its
+//! software rasterizer. WebKitGTK's non-composited mode (`WEBKIT_DISABLE_COMPOSITING_MODE`,
+//! `WEBKIT_DISABLE_DMABUF_RENDERER`) would be faster there, but the web process aborts in it as
+//! soon as a page needs a compositing layer (`FrameRenderer::graphicsLayerFactory` release
+//! assert, WebKit bugs 265460 / 306993, e.g. Artifactory), so it is left to the user.
+//! `WEBOVERLAY_GPU=1` keeps the GPU path, `=0` forces the software one; variables already set by
+//! the user are never overridden.
 
 use std::path::Path;
 
@@ -38,8 +41,6 @@ pub fn setup_env() {
         _ => !has_gpu(Path::new("/")),
     };
     if software {
-        set_default("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-        set_default("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         // Mesa goes straight to llvmpipe instead of probing the virtual GPU first
         // ("VMware: No 3D enabled", "failed to create dri2 screen").
         set_default("LIBGL_ALWAYS_SOFTWARE", "1");

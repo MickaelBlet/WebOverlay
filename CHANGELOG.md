@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Find in page (`Ctrl+F`), VSCode style, on Linux and Windows: the header shows a find field with Match Case (`Alt+C`), Match Whole Word (`Alt+W`) and Use Regular Expression (`Alt+R`) toggles (remembered), `n of m` counter, `Enter` / `Shift+Enter` or `F3` / `Shift+F3` for next / previous, `Esc` closes. All matches are highlighted, the current one in orange; the search runs again when the page loads. It replaces the WebView2 find bar on Windows; Linux had none.
 
+### Fixed
+
+- Linux without a usable GPU: some pages (e.g. Artifactory once logged in) crashed the page, or the whole app with the AppImage, a few seconds after loading. WebKitGTK's non-composited mode, which aborts as soon as a page needs a compositing layer, is no longer turned on; Mesa's software renderer is still used.
+
 ## [0.2.9] - 2026-11-23
 
 ### Added
