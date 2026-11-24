@@ -354,7 +354,8 @@
   $("page").addEventListener("contextmenu", (e) => {
     if (e.target === input) return;
     e.preventDefault();
-    invoke("page_menu");
+    // Position needed on Wayland: a menu without one has no parent window.
+    invoke("page_menu", { at: [e.clientX, e.clientY] });
   });
 
   window.weboverlay = {

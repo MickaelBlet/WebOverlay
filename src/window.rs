@@ -198,6 +198,8 @@ pub fn open(handle: &AppHandle, app: Arc<AppWindow>) -> Result<()> {
     fix_header_height(&header_webview);
     #[cfg(target_os = "linux")]
     attach_resize_handler(&header_webview);
+    #[cfg(target_os = "linux")]
+    header::native_menu::setup(&header_webview);
     crash::setup(&header_webview);
     let content_webview =
         window.add_child(content_view, content_rect.position, content_rect.size)?;

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Linux without a usable GPU: some pages (e.g. Artifactory once logged in) crashed the page, or the whole app with the AppImage, a few seconds after loading. WebKitGTK's non-composited mode, which aborts as soon as a page needs a compositing layer, is no longer turned on; Mesa's software renderer is still used.
+- Linux on Wayland: the right-click menu of the header page title (Copy URL / Edit URL…) did not open (GTK refused a menu without a parent window, or closed it right away).
 
 ## [0.2.9] - 2026-11-23
 

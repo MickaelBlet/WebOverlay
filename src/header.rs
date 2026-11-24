@@ -260,7 +260,16 @@ const MENU_COPY_URL: &str = "header:copy_url:";
 const MENU_EDIT_URL: &str = "header:edit_url:";
 
 /// Native context menu of the page title (the header webview is too small for an HTML one).
-fn page_menu(handle: &AppHandle, window: &tauri::Window, label: &str) -> tauri::Result<()> {
+fn page_menu(
+    handle: &AppHandle,
+    window: &tauri::Window,
+    label: &str,
+    at: Option<(f64, f64)>,
+) -> tauri::Result<()> {
+    #[cfg(target_os = "linux")]
+    if native_menu::popup(handle, label) {
+        return Ok(());
+    }
     use tauri::menu::{Menu, MenuItem};
     let copy = MenuItem::with_id(
         handle,
@@ -276,12 +285,22 @@ fn page_menu(handle: &AppHandle, window: &tauri::Window, label: &str) -> tauri::
         true,
         None::<&str>,
     )?;
-    window.popup_menu(&Menu::with_items(handle, &[&copy, &edit])?)
+    let menu = Menu::with_items(handle, &[&copy, &edit])?;
+    // Without a position, muda pops the GTK menu up on the root window, which
+    // Wayland refuses ("doesn't have a parent"). The header sits at the window
+    // origin, so its client coordinates are window coordinates.
+    match at {
+        Some((x, y)) => window.popup_menu_at(&menu, tauri::LogicalPosition::new(x, y)),
+        None => window.popup_menu(&menu),
+    }
 }
 
 /// App menu events (`Builder::on_menu_event`): the items of `page_menu`.
 pub fn menu_event(handle: &AppHandle, event: tauri::menu::MenuEvent) {
-    let id = event.id().as_ref();
+    menu_action(handle, event.id().as_ref());
+}
+
+fn menu_action(handle: &AppHandle, id: &str) {
     if let Some(label) = id.strip_prefix(MENU_COPY_URL) {
         if let Some(content) = handle.get_webview(&window::content_label(label)) {
             if let Ok(url) = content.url() {
@@ -294,6 +313,86 @@ pub fn menu_event(handle: &AppHandle, event: tauri::menu::MenuEvent) {
             let _ = header.set_focus();
             let _ = header.eval("window.weboverlay && window.weboverlay.editUrl()");
         }
+    }
+}
+
+/// `page_menu` as a plain `GtkMenu` popped up with the real right-click event of the header.
+/// muda pops its menus up with a synthesized event (no window, made-up time) after the IPC
+/// round trip: on Wayland the popup is dismissed as soon as it is shown.
+#[cfg(target_os = "linux")]
+pub mod native_menu {
+    use std::cell::RefCell;
+
+    use gtk::gdk;
+    use gtk::glib::Propagation;
+    use gtk::prelude::*;
+    use tauri::{AppHandle, Manager, Webview};
+
+    use super::{menu_action, MENU_COPY_URL, MENU_EDIT_URL};
+    use crate::window;
+
+    thread_local! {
+        /// Last right-click press on a header, consumed by `popup`.
+        static PRESS: RefCell<Option<gdk::Event>> = const { RefCell::new(None) };
+    }
+
+    /// Records the right-click presses of the header webview (the page's `contextmenu`
+    /// event, and so the `page_menu` command, follows them).
+    pub fn setup(header: &Webview) {
+        let _ = header.with_webview(|webview| {
+            webview.inner().connect_button_press_event(|_, event| {
+                if event.button() == 3 && event.event_type() == gdk::EventType::ButtonPress {
+                    let event: &gdk::Event = event;
+                    PRESS.with(|p| *p.borrow_mut() = Some(event.clone()));
+                }
+                Propagation::Proceed
+            });
+        });
+    }
+
+    /// Pops the menu up at the recorded press; `false` when there is none.
+    pub fn popup(handle: &AppHandle, label: &str) -> bool {
+        // Commands run on the main thread, where the presses are recorded.
+        if PRESS.with(|p| p.borrow().is_none()) {
+            return false;
+        }
+        let Some(header) = handle.get_webview(&window::header_label(label)) else {
+            return false;
+        };
+        let handle = handle.clone();
+        let label = label.to_owned();
+        header
+            .with_webview(move |webview| {
+                let Some(event) = PRESS.with(|p| p.borrow_mut().take()) else {
+                    return;
+                };
+                let widget = webview.inner();
+                let menu = gtk::Menu::new();
+                for (prefix, text) in [(MENU_COPY_URL, "Copy URL"), (MENU_EDIT_URL, "Edit URL…")]
+                {
+                    let item = gtk::MenuItem::with_label(text);
+                    let handle = handle.clone();
+                    let id = format!("{prefix}{label}");
+                    item.connect_activate(move |_| menu_action(&handle, &id));
+                    menu.append(&item);
+                }
+                menu.show_all();
+                // The `#page` tooltip is a popup too: Wayland maps a popup only on top of the
+                // last one ("non-top most parent"), so it is hidden while the menu is shown.
+                widget.set_has_tooltip(false);
+                // Keeps the menu alive while shown, then lets it go.
+                menu.set_attach_widget(Some(&widget));
+                menu.connect_deactivate(move |menu| {
+                    let menu = menu.clone();
+                    let widget = widget.clone();
+                    gtk::glib::idle_add_local_once(move || {
+                        menu.detach();
+                        widget.set_has_tooltip(true);
+                    });
+                });
+                menu.popup_at_pointer(Some(&event));
+            })
+            .is_ok()
     }
 }
 
@@ -373,6 +472,7 @@ pub fn header_action(
     action: String,
     url: Option<String>,
     find: Option<crate::find::Query>,
+    at: Option<(f64, f64)>,
 ) -> Result<(), String> {
     let window = webview.window();
     let label = window.label().to_owned();
@@ -415,7 +515,7 @@ pub fn header_action(
             content.navigate(url)
         }
         "find" | "find_close" => return crate::find::action(&content, &action, find),
-        "page_menu" => page_menu(handle, &window, &label),
+        "page_menu" => page_menu(handle, &window, &label, at),
         "external" => {
             if let Ok(url) = content.url() {
                 window::open_external(&url);
