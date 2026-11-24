@@ -5,8 +5,9 @@
 //!   reloaded): for the content, the header then shows the crash with a reload button.
 //! - Network process crash (Linux): the loads in flight fail with a WebKit internal error, the
 //!   page being loaded shows it: handled like a crash.
-//! - Content not responding (frozen page): the header shows it until the page responds again; its
-//!   reload button then kills the web process (`kill`) and reloads the page.
+//! - Content not responding (frozen page): after `UNRESPONSIVE_GRACE` (a busy page, e.g. a huge
+//!   Jenkins console log, is slow but not frozen), the header shows it until the page responds
+//!   again; its reload button then kills the web process (`kill`) and reloads the page.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -17,6 +18,12 @@ use crate::header;
 use crate::window;
 
 const LOOP_WINDOW: Duration = Duration::from_secs(60);
+
+/// How long the content must stay unresponsive before the header reports it.
+const UNRESPONSIVE_GRACE: Duration = Duration::from_secs(60);
+
+/// Webview label -> id of its current unresponsive period (none while it responds).
+static UNRESPONSIVE: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
 
 /// Webview label -> time of its last crash.
 static LAST: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
@@ -157,14 +164,11 @@ fn responsive(webview: &Webview, ok: bool) {
     let handle = webview.app_handle();
     let label = webview.window().label().to_owned();
     if ok {
+        lock(&UNRESPONSIVE).retain(|(l, _)| *l != label);
         if header::failure(handle, &label) == Some(Failure::Unresponsive) {
             header::set_failure(handle, &label, None);
         }
         return;
-    }
-    eprintln!("weboverlay: {}: page not responding", webview.label());
-    if header::failure(handle, &label).is_none() {
-        header::set_failure(handle, &label, Some(Failure::Unresponsive));
     }
     // WebView2 has no "responsive again" event: a script runs once the page responds.
     #[cfg(windows)]
@@ -172,6 +176,35 @@ fn responsive(webview: &Webview, ok: bool) {
         let view = webview.clone();
         let _ = webview.eval_with_callback("0", move |_| responsive(&view, true));
     }
+    let id = {
+        let mut pending = lock(&UNRESPONSIVE);
+        if pending.iter().any(|(l, _)| *l == label) {
+            // Already waiting (WebView2 repeats the event).
+            return;
+        }
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        pending.push((label.clone(), id));
+        id
+    };
+    let view = webview.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(UNRESPONSIVE_GRACE);
+        let _ = view.clone().run_on_main_thread(move || {
+            if !lock(&UNRESPONSIVE).contains(&(label.clone(), id)) {
+                return;
+            }
+            eprintln!(
+                "weboverlay: {}: {}",
+                view.label(),
+                Failure::Unresponsive.message()
+            );
+            let handle = view.app_handle();
+            if header::failure(handle, &label).is_none() {
+                header::set_failure(handle, &label, Some(Failure::Unresponsive));
+            }
+        });
+    });
 }
 
 #[cfg(target_os = "linux")]

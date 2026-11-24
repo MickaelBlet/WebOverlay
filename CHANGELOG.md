@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Header: a page busy for a few seconds (e.g. a huge Jenkins console log) was reported as `Page not responding`, and its reload button stopped it. The header now waits until the page has not responded for 60 seconds.
 - Linux without a usable GPU: some pages (e.g. Artifactory once logged in) crashed the page, or the whole app with the AppImage, a few seconds after loading. WebKitGTK's non-composited mode, which aborts as soon as a page needs a compositing layer, is no longer turned on; Mesa's software renderer is still used.
 - Linux on Wayland: the right-click menu of the header page title (Copy URL / Edit URL…) did not open (GTK refused a menu without a parent window, or closed it right away).
 

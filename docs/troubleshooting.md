@@ -27,7 +27,9 @@ the page being loaded is loaded again; on a second failure within a minute the h
 ## Page not responding
 
 A page busy in a script (infinite loop, heavy computation) stops reacting to clicks and keys: after
-a few seconds the header shows `Page not responding` (removed if the page recovers). Click it (or
+about 60 seconds without a response the header shows `Page not responding` (removed if the page
+recovers). A page that is only slow (e.g. a huge Jenkins console log) and responds within that delay
+is not reported. Click it (or
 `F5` with the header focused) to stop the page and reload it.
 
 ## AppImage
