@@ -239,6 +239,8 @@ fn main() -> ExitCode {
             vault::vault_fill,
         ])
         .setup(move |app| {
+            #[cfg(target_os = "linux")]
+            linux::setup_webviews();
             match launch.mode {
                 Mode::Apps => {}
                 Mode::Edit => editor::open(app.handle())?,

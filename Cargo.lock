@@ -5147,6 +5147,7 @@ dependencies = [
  "gtk",
  "image",
  "keyring-core",
+ "libc",
  "percent-encoding",
  "resvg",
  "rfd",

@@ -7,6 +7,8 @@ driver), WebOverlay sends Mesa straight to its software renderer (`LIBGL_ALWAYS_
 has WebKit paint pages on the CPU with one thread per core (`WEBKIT_SKIA_ENABLE_CPU_RENDERING=1`,
 `WEBKIT_SKIA_CPU_PAINTING_THREADS`, WebKitGTK 2.46 or later): the software renderer only composites
 the page layers, which is several times faster than painting through it.
+WebKit also redraws only the region of the page that changed (WebKitGTK 2.42 or later), so a page
+with a never-ending animation (a loading spinner) does not keep a CPU core busy.
 
 - `WEBOVERLAY_GPU=1` keeps the GPU path, `WEBOVERLAY_GPU=0` forces the software one.
 - Variables already set are kept.

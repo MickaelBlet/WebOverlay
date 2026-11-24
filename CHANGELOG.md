@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Linux without a usable GPU (virtual machine without 3D acceleration): pages render much faster (about 3 times on pages that repaint a lot). WebKit now paints pages on the CPU with one thread per core, Mesa's software renderer only composites them; accelerated compositing is kept, so pages such as Artifactory no longer crash. `WEBKIT_SKIA_*` variables already set are kept.
+- Linux without a usable GPU: a page with a never-ending animation (a loading spinner, ...) no longer keeps a CPU core busy (about 75 % → 10 % for a small spinner): WebKit now redraws only the changed region of the page instead of the whole window (WebKitGTK 2.42 or later).
 
 ## [0.2.10] - 2026-11-24
 

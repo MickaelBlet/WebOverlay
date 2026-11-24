@@ -12,8 +12,19 @@
 //! (`FrameRenderer::graphicsLayerFactory` release assert, WebKit bugs 265460 / 306993, e.g.
 //! Artifactory), so it is left to the user. `WEBOVERLAY_GPU=1` keeps the GPU path, `=0` forces
 //! the software one; variables already set by the user are never overridden.
+//!
+//! In software mode `setup_webviews` also turns on WebKit's `UseDamagingInformationForCompositing`
+//! feature in every webview: the compositor then only redraws the changed region instead of the
+//! whole view, so a page with a never-ending animation (a 24 px CSS spinner) no longer keeps
+//! llvmpipe busy (about 75 % of a core → 15 % under Xvfb). WebKit reads it when the page is
+//! created, before the first load: too late in `with_webview`, so a GTK `parent-set` emission
+//! hook sets it when wry packs the new `WebKitWebView` in its container, just before `load_uri`.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set by `setup_env`: Mesa software rendering is in use.
+static SOFTWARE: AtomicBool = AtomicBool::new(false);
 
 /// DRM drivers of virtual or display-only GPUs: no (or no usable) 3D acceleration.
 const SOFTWARE_DRIVERS: &[&str] = &[
@@ -44,6 +55,7 @@ pub fn setup_env() {
         Ok("0") => true,
         _ => !has_gpu(Path::new("/")),
     };
+    SOFTWARE.store(software, Ordering::Relaxed);
     if software {
         // Mesa goes straight to llvmpipe instead of probing the virtual GPU first
         // ("VMware: No 3D enabled", "failed to create dri2 screen").
@@ -53,6 +65,116 @@ pub fn setup_env() {
         set_default("WEBKIT_SKIA_ENABLE_CPU_RENDERING", "1");
         let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
         set_default("WEBKIT_SKIA_CPU_PAINTING_THREADS", &threads.to_string());
+    }
+}
+
+/// Software mode: enables `UseDamagingInformationForCompositing` in every `WebKitWebView` created
+/// from now on (GTK main thread, GTK initialized: Tauri's `setup`).
+pub fn setup_webviews() {
+    use gtk::glib::gobject_ffi;
+    use gtk::glib::translate::IntoGlib;
+    use gtk::glib::StaticType;
+
+    if !SOFTWARE.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(features) = Features::load() else {
+        return; // WebKitGTK before 2.42: no feature API.
+    };
+    if FEATURES.set(features).is_err() {
+        return; // Already installed.
+    }
+    unsafe extern "C" fn hook(
+        _hint: *mut gobject_ffi::GSignalInvocationHint,
+        n_params: u32,
+        params: *const gobject_ffi::GValue,
+        _data: gtk::glib::ffi::gpointer,
+    ) -> gtk::glib::ffi::gboolean {
+        if n_params > 0 {
+            let instance =
+                gobject_ffi::g_value_get_object(params) as *mut gobject_ffi::GTypeInstance;
+            let web_view = webkit2gtk::ffi::webkit_web_view_get_type();
+            if !instance.is_null()
+                && gobject_ffi::g_type_check_instance_is_a(instance, web_view) != 0
+            {
+                if let Some(features) = FEATURES.get() {
+                    features.enable(instance.cast(), c"UseDamagingInformationForCompositing");
+                }
+            }
+        }
+        gtk::glib::ffi::GTRUE // Keep the hook.
+    }
+    unsafe {
+        let widget = gtk::Widget::static_type().into_glib();
+        let class = gobject_ffi::g_type_class_ref(widget);
+        let signal = gobject_ffi::g_signal_lookup(c"parent-set".as_ptr(), widget);
+        if signal != 0 {
+            gobject_ffi::g_signal_add_emission_hook(
+                signal,
+                0,
+                Some(hook),
+                std::ptr::null_mut(),
+                None,
+            );
+        }
+        gobject_ffi::g_type_class_unref(class);
+    }
+}
+
+static FEATURES: std::sync::OnceLock<Features> = std::sync::OnceLock::new();
+
+/// WebKitGTK 2.42+ feature API, looked up at run time: linking it would stop the app from starting
+/// with an older WebKitGTK. `WebKitFeatureList` / `WebKitFeature` / `WebKitSettings` /
+/// `WebKitWebView` pointers as `Ptr`, `gboolean` as `i32`, `gsize` as `usize`.
+struct Features {
+    all: unsafe extern "C" fn() -> Ptr,
+    length: unsafe extern "C" fn(Ptr) -> usize,
+    get: unsafe extern "C" fn(Ptr, usize) -> Ptr,
+    identifier: unsafe extern "C" fn(Ptr) -> *const std::ffi::c_char,
+    unref: unsafe extern "C" fn(Ptr),
+    settings: unsafe extern "C" fn(Ptr) -> Ptr,
+    set_enabled: unsafe extern "C" fn(Ptr, Ptr, i32),
+}
+
+type Ptr = *mut std::ffi::c_void;
+
+impl Features {
+    fn load() -> Option<Self> {
+        /// SAFETY: `F` must be the `extern "C" fn` type of symbol `name`.
+        unsafe fn symbol<F: Copy>(name: &std::ffi::CStr) -> Option<F> {
+            let ptr = libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr());
+            (!ptr.is_null()).then(|| std::mem::transmute_copy::<Ptr, F>(&ptr))
+        }
+        // SAFETY: signatures of the WebKitGTK headers (`WebKitFeature.h`, `WebKitSettings.h`).
+        unsafe {
+            Some(Self {
+                all: symbol(c"webkit_settings_get_all_features")?,
+                length: symbol(c"webkit_feature_list_get_length")?,
+                get: symbol(c"webkit_feature_list_get")?,
+                identifier: symbol(c"webkit_feature_get_identifier")?,
+                unref: symbol(c"webkit_feature_list_unref")?,
+                settings: symbol(c"webkit_web_view_get_settings")?,
+                set_enabled: symbol(c"webkit_settings_set_feature_enabled")?,
+            })
+        }
+    }
+
+    /// Enables feature `id` (no-op when this WebKit doesn't have it) in the settings of `view`.
+    unsafe fn enable(&self, view: Ptr, id: &std::ffi::CStr) {
+        let settings = (self.settings)(view);
+        let list = (self.all)();
+        if settings.is_null() || list.is_null() {
+            return;
+        }
+        for i in 0..(self.length)(list) {
+            let feature = (self.get)(list, i);
+            let name = (self.identifier)(feature);
+            if !name.is_null() && std::ffi::CStr::from_ptr(name) == id {
+                (self.set_enabled)(settings, feature, 1);
+                break;
+            }
+        }
+        (self.unref)(list); // `transfer full`
     }
 }
 

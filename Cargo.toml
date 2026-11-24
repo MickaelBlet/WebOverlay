@@ -37,6 +37,8 @@ rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
 gtk = "0.18"
 # Download policy and popup handling of the content webview (`download.rs`), same version as wry.
 webkit2gtk = "2.0"
+# `dlsym` of the WebKitGTK 2.42+ feature API (`linux.rs`), resolved at run time.
+libc = "0.2"
 # Vault (`vault.rs`): Secret Service over zbus 5 (pure Rust, no libdbus; same zbus as tauri).
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 
