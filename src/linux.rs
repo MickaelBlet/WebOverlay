@@ -2,12 +2,16 @@
 //! WebKit's helper processes inherit it).
 //!
 //! Without a usable GPU (virtual machine without 3D, no render node) Mesa is sent straight to its
-//! software rasterizer. WebKitGTK's non-composited mode (`WEBKIT_DISABLE_COMPOSITING_MODE`,
-//! `WEBKIT_DISABLE_DMABUF_RENDERER`) would be faster there, but the web process aborts in it as
-//! soon as a page needs a compositing layer (`FrameRenderer::graphicsLayerFactory` release
-//! assert, WebKit bugs 265460 / 306993, e.g. Artifactory), so it is left to the user.
-//! `WEBOVERLAY_GPU=1` keeps the GPU path, `=0` forces the software one; variables already set by
-//! the user are never overridden.
+//! software rasterizer, and WebKit's Skia paints the page tiles on the CPU
+//! (`WEBKIT_SKIA_ENABLE_CPU_RENDERING`, one painting thread per core, max 8): Skia's GL painting
+//! on llvmpipe is the slow part, llvmpipe is then only used to composite the layers (about 3x
+//! faster on a repaint-heavy page under Xvfb, WebKitGTK 2.52). Accelerated compositing itself is
+//! kept: WebKitGTK's non-composited mode (`WEBKIT_DISABLE_COMPOSITING_MODE`, and also
+//! `WEBKIT_DISABLE_DMABUF_RENDERER`, which turns the policy to `never`, see `webkit://gpu`) is
+//! faster still, but the web process aborts in it as soon as a page needs a compositing layer
+//! (`FrameRenderer::graphicsLayerFactory` release assert, WebKit bugs 265460 / 306993, e.g.
+//! Artifactory), so it is left to the user. `WEBOVERLAY_GPU=1` keeps the GPU path, `=0` forces
+//! the software one; variables already set by the user are never overridden.
 
 use std::path::Path;
 
@@ -44,6 +48,11 @@ pub fn setup_env() {
         // Mesa goes straight to llvmpipe instead of probing the virtual GPU first
         // ("VMware: No 3D enabled", "failed to create dri2 screen").
         set_default("LIBGL_ALWAYS_SOFTWARE", "1");
+        // Skia rasterizes on the CPU (multithreaded) instead of through llvmpipe; ignored by
+        // WebKitGTK before 2.46 (Cairo).
+        set_default("WEBKIT_SKIA_ENABLE_CPU_RENDERING", "1");
+        let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(8));
+        set_default("WEBKIT_SKIA_CPU_PAINTING_THREADS", &threads.to_string());
     }
 }
 

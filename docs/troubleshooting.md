@@ -3,11 +3,15 @@
 ## Linux: slow rendering in a virtual machine
 
 Without a usable GPU (virtual machine without 3D acceleration, no `/dev/dri/renderD*` of a 3D
-driver), WebOverlay sends Mesa straight to its software renderer (`LIBGL_ALWAYS_SOFTWARE=1`).
+driver), WebOverlay sends Mesa straight to its software renderer (`LIBGL_ALWAYS_SOFTWARE=1`) and
+has WebKit paint pages on the CPU with one thread per core (`WEBKIT_SKIA_ENABLE_CPU_RENDERING=1`,
+`WEBKIT_SKIA_CPU_PAINTING_THREADS`, WebKitGTK 2.46 or later): the software renderer only composites
+the page layers, which is several times faster than painting through it.
 
 - `WEBOVERLAY_GPU=1` keeps the GPU path, `WEBOVERLAY_GPU=0` forces the software one.
 - Variables already set are kept.
-- `WEBKIT_DISABLE_COMPOSITING_MODE=1` renders faster without a GPU, but WebKitGTK crashes in this
+- `WEBKIT_DISABLE_COMPOSITING_MODE=1` (or `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which has the same
+  effect) renders faster without a GPU, but WebKitGTK crashes in this
   mode on pages that need a compositing layer (e.g. Artifactory once logged in): the page, or the
   whole app with the AppImage. The same happens when the X server has no OpenGL (GLX): WebKit
   then disables acceleration by itself (`Disabled hardware acceleration because GTK failed to

@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Linux without a usable GPU (virtual machine without 3D acceleration): pages render much faster (about 3 times on pages that repaint a lot). WebKit now paints pages on the CPU with one thread per core, Mesa's software renderer only composites them; accelerated compositing is kept, so pages such as Artifactory no longer crash. `WEBKIT_SKIA_*` variables already set are kept.
+
 ## [0.2.10] - 2026-11-24
 
 ### Added
